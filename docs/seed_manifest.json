@@ -1,0 +1,51 @@
+{
+  "manifest_version": 1,
+  "generated_at": "2026-10-02T20:05:47.394601+00:00",
+  "kaggle_cli": "2.2.4",
+  "files": [
+    {
+      "dataset": "jerzyszocik/ufc-fight-forecast-complete-gold-modeling-dataset",
+      "file": "full_data_silver_plus.parquet",
+      "path": "jerzyszocik__ufc-fight-forecast-complete-gold-modeling-dataset/full_data_silver_plus.parquet",
+      "size_bytes": 2637428,
+      "sha256": "bc66bfefb71e77e186128241cd512c27705595bbc1a5775d99004488b3f596c2",
+      "downloaded_at": "2026-10-02T19:09:15.475719+00:00",
+      "kaggle_file_created": "2026-06-10 09:24:18.910000",
+      "license": "CC0-1.0",
+      "source_url": "https://www.kaggle.com/datasets/jerzyszocik/ufc-fight-forecast-complete-gold-modeling-dataset"
+    },
+    {
+      "dataset": "mdabbert/ultimate-ufc-dataset",
+      "file": "ufc-master.csv",
+      "path": "mdabbert__ultimate-ufc-dataset/ufc-master.csv",
+      "size_bytes": 3198027,
+      "sha256": "deb1cd9a7014c08a538875e2b585e6f51fbf8f7a6d3f981eb684db1bd7242dc5",
+      "downloaded_at": "2026-10-02T19:09:15.475719+00:00",
+      "kaggle_file_created": "2026-04-01 23:37:53.146000",
+      "license": "CC-BY-4.0",
+      "source_url": "https://www.kaggle.com/datasets/mdabbert/ultimate-ufc-dataset"
+    },
+    {
+      "dataset": "jerzyszocik/ufc-rankings-history",
+      "file": "UFC_rankings_history.csv",
+      "path": "jerzyszocik__ufc-rankings-history/UFC_rankings_history.csv",
+      "size_bytes": 4507231,
+      "sha256": "c751b95800ccfcdccc4eef97c0dec327d89d86a475fcedbb878802bdb347754b",
+      "downloaded_at": "2026-10-02T19:09:15.475719+00:00",
+      "kaggle_file_created": "2026-10-01 15:14:16.825000",
+      "license": "CC0-1.0",
+      "source_url": "https://www.kaggle.com/datasets/jerzyszocik/ufc-rankings-history"
+    },
+    {
+      "dataset": "martj42/ufc-rankings",
+      "file": "rankings_history.csv",
+      "path": "martj42__ufc-rankings/rankings_history.csv",
+      "size_bytes": 4343036,
+      "sha256": "a31032fc11db4ec2ef3b43f940937118f07dbd0b3bd622d27bf22f672fad2437",
+      "downloaded_at": "2026-10-02T20:05:47.394601+00:00",
+      "kaggle_file_created": "2026-06-06 18:07:41.927000",
+      "license": "CC0-1.0",
+      "source_url": "https://www.kaggle.com/datasets/martj42/ufc-rankings"
+    }
+  ]
+}

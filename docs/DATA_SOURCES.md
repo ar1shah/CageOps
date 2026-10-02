@@ -273,9 +273,57 @@ Notes on the disclaimer:
 
 ---
 
+## Silver Parquet findings (verified 2026-10-02)
+
+Profiled `full_data_silver_plus.parquet` (sha256 in `docs/seed_manifest.json`) with DuckDB.
+
+**Shape.** 8,555 rows, one per fight, 367 columns, `fight_url` unique (no duplicate fights). 774 events, 2,686 distinct fighters. `event_date` runs **1994-03-11 to 2026-05-16**. The file's Kaggle timestamp is 2026-06-10, so June onward comes from the Phase 1b scraper.
+
+**Per-round stats exist.** The layout is wide: `f_{1,2}_r{1..5}_<stat>` with 21 stats per fighter per round (`sig_strikes_succ/att`, `total_strikes_*`, `td_1_succ/att`, `knockdowns`, `submission_att`, `reversals`, `ctrl`, head/body/leg and distance/clinch/ground splits). Whole-fight totals are in `f_{1,2}_<stat>`. The loader has to unpivot this wide layout into a per-round table. Coverage is complete from 2000 onward; 1994 to 1999 has gaps (for example 1994: 29 of 31 fights have round-1 stats). Round sums match the fight totals for sig strikes in 8,534 of 8,534 checked fights.
+
+**Data-quality problems to handle in the loader**
+- `result` is inconsistent: `'\n\n        \n KO/TKO \n'` (whitespace-padded) next to plain `'KO/TKO'`, and `'Decision'` next to `'Decision - Unanimous'`. Needs normalizing to one method vocabulary.
+- 7 fights have a `winner` that matches neither fighter name (draws / no contests).
+- **Fighter order is not random.** `winner == f_1_name` in 5,487 fights vs 3,061 for `f_2` (64%). In the two fights spot-checked, `f_1` was the champion / favorite. So f_1 vs f_2 carries information. The loader must not treat it as meaningful, and training must swap order randomly.
+
+**Leakage risks (CLAUDE.md rule 1)**
+- `f_{1,2}_fighter_SlpM`, `Str_Acc`, `SApM`, `Str_Def`, `TD_Avg`, `TD_Acc`, `TD_Def`, `Sub_Avg` and the `w`/`l`/`d`/`nc_dq` record columns are populated for all 8,555 fights. They look like **career snapshots from the time of scraping**, so for an old fight they include that fighter's future fights. **Do not load these as fight-time features.** The feature pipeline (1c) must compute everything from per-round facts.
+- Silver also contains `f_{1,2}_ranking`, `*_implied_prob`, `*_odds_legacy`, `*_ko_odds`, `*_sub_odds`, `*_bfo_best_decimal` and `odds_source`. Odds are present for 6,660 fights (legacy 5,530, bfo 1,130) and rankings for 2,009. D-006 assumed silver was "raw facts only". These columns are not raw facts, and we don't know when each was captured, so they are not used as features. Whether to use silver's odds or mdabbert's for the baseline is an open question for the Phase 1a plan.
+
+**Domain spot-check (compare with ufcstats.com).**
+- UFC 243, Whittaker vs Adesanya (2019-10-05): Adesanya by KO, round 2 at 3:33; R1 sig 17/66 vs 20/44 with a knockdown for Adesanya in R1 and R2.
+- UFC 254, Khabib vs Gaethje (2020-10-24): Khabib by triangle choke, round 2 at 1:34; R1 sig 23/60 vs 23/36, Khabib 1 of 2 takedowns.
+
+## Phase 1a load results (verified 2026-10-02)
+
+Loaded by `uv run python -m cageops_worker.seed`. Each row count below corresponds to the
+file hashes in `docs/seed_manifest.json` (silver `bc66bfefb71e`, mdabbert `deb1cd9a7014`,
+jerzyszocik rankings `c751b95800cc`, martj42 `a31032fc11db`); a different hash means a
+different input, not a code change. The loader refuses to run if a file doesn't match.
+
+| Table | Rows | Notes |
+|---|---|---|
+| fighters / events / fights | 2,686 / 774 / 8,555 | silver is the only source that creates fights |
+| fight_round_stats | 40,244 | 21 fights (1994 to 1998 only) have no round data |
+| fight_totals | 17,068 | round sig-strike sums match totals in every checked fight |
+| odds, mdabbert | 6,907 | 7,160 of 7,177 rows matched (99.76%); 17 reported, not loaded |
+| odds, silver | 6,650 | 125 fights have silver odds and no mdabbert odds |
+| fighter_aliases | 124 | all reviewed and scoped by source: 96 `mdabbert`, 16 `jerzyszocik`, 12 `martj42` |
+| rankings, jerzyszocik | 88,156 | 474 clean dates, 2013-02-04 to 2025-07-27 |
+| rankings, martj42 | 99,516 | 530 clean dates, 2013-02-04 to 2026-06-02 |
+
+- **Favorite agreement:** mdabbert and silver pick the same favorite in 98.1% of the 6,406 fights where both have odds (`bfo` 98.6%, `legacy` 98.0%). This shows the sources are consistent, not that silver's odds were known before the fight, so mdabbert stays the primary baseline source.
+- **mdabbert vs silver disagreements (logged in the load report):** 6 red-corner differences (Jotko vs Anders, Baeza vs Brown, Holland vs Hernandez, Landwehr vs Elkins on 2020-05-16; Emmers vs Chikadze 2020-03-07; Martin vs Jandiroba 2019-12-07) and 2 winner differences (Martin vs Jandiroba and Davis vs Jones). Both were checked by hand and are **mdabbert errors**: Jandiroba won (silver has it, mdabbert has the corners flipped), and on ufcstats Mike Davis won Davis vs Jones by unanimous decision, referee Keith Peterson (mdabbert names Mason Jones). They are listed under `verified_mdabbert_errors` in the load report, from `verified_disagreements.csv`. ufcstats-derived data (silver) is canonical, and the other 5 red-corner differences are logged but unverified. The 14 mdabbert fights that silver doesn't have (e.g. Hall vs Souza, 2020-05-09, which was cancelled) are reported and skipped, never inserted.
+- **Rankings quality:** jerzyszocik's snapshots from 2025-08-03 onward (63 dates) hold two merged lists and are skipped; martj42 has 2 such dates (2025-09-16, 2026-05-19), also skipped. See D-011. Fights before the first snapshot (2013-02-04, 2,160 fights) have no rankings, and ranks are NULL when the latest snapshot is more than 21 days old.
+- **Unmatched ranking names:** 3 of 594 jerzyszocik names (0.51%, 8 rows) and 2 of 623 martj42 names (0.32%, 2 rows). The leftovers are Melissa Dixon and DeAnna Bennett (not in silver) and Jaime Alvarez (a candidate that was rejected as a different person).
+- **ufcstats.com and automated clients (found 2026-10-02):** a plain HTTP request to a fight page returned a JavaScript "Checking your browser" page instead of the content, and the site doesn't serve HTTPS. We don't try to get around a bot check. This is a risk for the Phase 1b live scraper, so Phase 1b has to start by checking what the site allows (D-004).
+
+---
+
 ## Open items before Phase 1
 
-- [ ] Check `http://ufcstats.com/robots.txt` and the site footer from your own machine; record results in DECISIONS.md.
-- [ ] Open the jerzyszocik silver Parquet and confirm per-round columns and date range.
-- [ ] Decide on ESPN (recommended: remove) and update the CLAUDE.md architecture line.
+- [x] Check `http://ufcstats.com/robots.txt` and the site footer from your own machine; record results in DECISIONS.md. (D-004)
+- [x] Open the jerzyszocik silver Parquet and confirm per-round columns and date range. (see "Silver Parquet findings" below)
+- [x] Decide on ESPN (recommended: remove) and update the CLAUDE.md architecture line. (D-005)
 - [ ] Confirm MMA Fighting / MMA Junkie feed URLs and terms manually, or leave them out.
+- [ ] Phase 1b: find a live rankings source for upcoming fights (martj42 ends 2026-06-02) and settle how to reach ufcstats given the browser check above.

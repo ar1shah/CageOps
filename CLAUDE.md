@@ -69,8 +69,11 @@ data/                      local-only raw data (gitignored)
 - `docker compose up -d` — start Postgres (pgvector) + Redis locally
 - `docker compose down` — stop them (data kept); `docker compose down -v` also deletes local data
 - `uv sync --all-packages --all-groups` — install deps for every workspace package
-- `uv run pytest` — run tests
+- `uv run pytest` — run tests (DB tests need `docker compose up -d`; set `REQUIRE_DB=1` to fail instead of skip)
+- `uv run alembic -c packages/cageops_common/alembic.ini upgrade head` — apply migrations (`check` detects model/migration drift)
+- `uv run python -m cageops_worker.seed` — load seed data into Postgres (idempotent; verifies the manifest first)
 - `uv run ruff check . && uv run ruff format .` — lint + format
+- `scripts/download_seed.sh [--force]` — download seed data to `data/raw/` and write the sha256 manifest (needs `~/.kaggle/` credentials)
 - `uv run --package cageops-api uvicorn cageops_api.main:app --port 8000` — run the API locally
 
 ## DECISIONS.md entry format

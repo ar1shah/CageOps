@@ -27,5 +27,6 @@ known-first-party = [
 ]
 
 [tool.pytest.ini_options]
-testpaths = ["packages", "services"]
+testpaths = ["packages", "services", "scripts"]
+pythonpath = ["scripts"]
 addopts = "--import-mode=importlib"
