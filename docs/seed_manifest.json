@@ -1,6 +1,6 @@
 {
   "manifest_version": 1,
-  "generated_at": "2026-10-02T19:09:18.464373+00:00",
+  "generated_at": "2026-10-02T20:05:47.394601+00:00",
   "kaggle_cli": "2.2.4",
   "files": [
     {
@@ -35,6 +35,17 @@
       "kaggle_file_created": "2026-10-01 15:14:16.825000",
       "license": "CC0-1.0",
       "source_url": "https://www.kaggle.com/datasets/jerzyszocik/ufc-rankings-history"
+    },
+    {
+      "dataset": "martj42/ufc-rankings",
+      "file": "rankings_history.csv",
+      "path": "martj42__ufc-rankings/rankings_history.csv",
+      "size_bytes": 4343036,
+      "sha256": "a31032fc11db4ec2ef3b43f940937118f07dbd0b3bd622d27bf22f672fad2437",
+      "downloaded_at": "2026-10-02T20:05:47.394601+00:00",
+      "kaggle_file_created": "2026-06-06 18:07:41.927000",
+      "license": "CC0-1.0",
+      "source_url": "https://www.kaggle.com/datasets/martj42/ufc-rankings"
     }
   ]
 }

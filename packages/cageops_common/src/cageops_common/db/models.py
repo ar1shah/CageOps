@@ -216,6 +216,10 @@ class Ranking(Base):
         ),
         CheckConstraint("rank >= 0", name="rank_non_negative"),
         Index("ix_rankings_fighter_snapshot", "fighter_id", "snapshot_date"),
+        # serves "latest snapshot of this list before date X" in the fight_pre_rankings view
+        Index(
+            "ix_rankings_list_snapshot", "source", "ranking_type", "weight_class", "snapshot_date"
+        ),
     )
 
     source: Mapped[str] = mapped_column(Text, primary_key=True)

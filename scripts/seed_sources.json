@@ -16,5 +16,11 @@
     "file": "UFC_rankings_history.csv",
     "license": "CC0-1.0",
     "role": "historical rankings"
+  },
+  {
+    "dataset": "martj42/ufc-rankings",
+    "file": "rankings_history.csv",
+    "license": "CC0-1.0",
+    "role": "historical rankings, second source: fills 2025-08 onward where jerzyszocik's snapshots are merged lists"
   }
 ]

@@ -24,9 +24,14 @@ from cageops_worker.seed.odds import (
     load_silver_odds,
     odds_summary,
 )
+from cageops_worker.seed.rankings import load_rankings
 from cageops_worker.seed.silver import load_silver
 
 MDABBERT = ("mdabbert/ultimate-ufc-dataset", "ufc-master.csv")
+RANKINGS = {
+    "jerzyszocik": ("jerzyszocik/ufc-rankings-history", "UFC_rankings_history.csv"),
+    "martj42": ("martj42/ufc-rankings", "rankings_history.csv"),
+}
 SILVER = (
     "jerzyszocik/ufc-fight-forecast-complete-gold-modeling-dataset",
     "full_data_silver_plus.parquet",
@@ -57,6 +62,15 @@ def main(argv: list[str] | None = None) -> int:
             print(json.dumps(exc.report, indent=2, default=str), file=sys.stderr)
         return 1
     reports.append(odds_summary(engine))
+    for source, (dataset, filename) in RANKINGS.items():
+        try:
+            rankings_path, rankings_sha = verified_file(
+                dataset, filename, args.raw_dir, args.manifest
+            )
+        except ManifestMismatchError as exc:
+            print(f"ERROR: {exc}", file=sys.stderr)
+            return 1
+        reports.append(load_rankings(engine, source, rankings_path, rankings_sha))
 
     print(json.dumps(reports, indent=2, default=str))
     return 0
