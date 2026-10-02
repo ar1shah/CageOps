@@ -16,6 +16,16 @@ line-length = 100
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM"]
 
+[tool.ruff.lint.isort]
+# Workspace packages live under src/, so tell ruff they are first-party.
+known-first-party = [
+    "cageops_common",
+    "cageops_api",
+    "cageops_scraper",
+    "cageops_worker",
+    "cageops_trainer",
+]
+
 [tool.pytest.ini_options]
 testpaths = ["packages", "services"]
 addopts = "--import-mode=importlib"
