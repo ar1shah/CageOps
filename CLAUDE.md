@@ -71,6 +71,7 @@ data/                      local-only raw data (gitignored)
 - `uv sync --all-packages --all-groups` — install deps for every workspace package
 - `uv run pytest` — run tests
 - `uv run ruff check . && uv run ruff format .` — lint + format
+- `scripts/download_seed.sh [--force]` — download seed data to `data/raw/` and write the sha256 manifest (needs `~/.kaggle/` credentials)
 - `uv run --package cageops-api uvicorn cageops_api.main:app --port 8000` — run the API locally
 
 ## DECISIONS.md entry format

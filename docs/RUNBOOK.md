@@ -30,6 +30,17 @@ docker compose down -v           # stop containers and DELETE all local data
 docker compose logs -f postgres  # watch a service's logs
 ```
 
+## Seed data
+
+Needs Kaggle credentials in `~/.kaggle/` (outside the repo; never commit them).
+
+```bash
+scripts/download_seed.sh          # download missing files into data/raw/, write the manifest
+scripts/download_seed.sh --force  # re-download everything
+```
+
+This writes `data/raw/MANIFEST.json` (local) and `docs/seed_manifest.json` (committed). If row counts differ from an earlier run, compare the sha256 values in the manifest first: a changed hash means Kaggle's data changed, not our code.
+
 ## Production
 
 _Written in Phase 2c (VM + docker compose) and rewritten in Phase 6 (k3s)._

@@ -65,3 +65,12 @@ Every meaningful design decision gets an entry. Format:
   3. Raw facts from the jerzyszocik "silver" file, plus separate odds and rankings sources.
 - Decision: option 3. Stats come from jerzyszocik silver (raw per-round facts, the same shape the scraper produces). Odds come from mdabbert (CC BY 4.0), used as a baseline only and never as model features. Rankings come from the jerzyszocik rankings history. The "golden" precomputed features are NOT loaded.
 - Tradeoff: more loaders and a join across sources, in exchange for a single raw schema shared by seed and scraped data and a leakage test that actually means something. Revisit if silver turns out to lack per-round columns or has bad date coverage.
+
+### D-007: Reproducible seed downloads with a sha256 manifest
+- Context: the seed datasets are Kaggle files that their authors refresh (rankings weekly, odds daily). Kaggle's CLI can't download an older version of a dataset and doesn't expose a version number, so "the data we loaded" can't be re-fetched later and row counts could silently change between pulls.
+- Options considered:
+  1. Download by hand once and document it in prose.
+  2. Script the download and record Kaggle's version or last-updated date.
+  3. Script the download and fingerprint every file we actually use with a sha256 manifest.
+- Decision: option 3. `scripts/download_seed.sh` fetches only the files we load (listed in `scripts/seed_sources.json`), verifies each one actually landed (unzipping if Kaggle sent a `.zip`), and `scripts/write_manifest.py` writes `data/raw/MANIFEST.json` with size, sha256, download time, Kaggle's file creation timestamp, and license. A copy is committed as `docs/seed_manifest.json` (hashes and dates only, no data) so any row count in the docs can be tied to exact input bytes. Existing files are always re-hashed, `--force` re-downloads, and a missing file is an error, so the manifest can't describe something that isn't there.
+- Tradeoff: we can detect that the data changed but can't recover the old data (Kaggle won't serve it), so reproducing an old result means keeping a local copy of `data/raw/`. The Kaggle CLI is pinned (2.2.4) because its behavior has changed between releases. Revisit if we need true archival: then store the raw files in our own object storage keyed by sha256.

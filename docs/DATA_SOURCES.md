@@ -273,9 +273,32 @@ Notes on the disclaimer:
 
 ---
 
+## Silver Parquet findings (verified 2026-10-02)
+
+Profiled `full_data_silver_plus.parquet` (sha256 in `docs/seed_manifest.json`) with DuckDB.
+
+**Shape.** 8,555 rows, one per fight, 367 columns, `fight_url` unique (no duplicate fights). 774 events, 2,686 distinct fighters. `event_date` runs **1994-03-11 to 2026-05-16**. The file's Kaggle timestamp is 2026-06-10, so June onward comes from the Phase 1b scraper.
+
+**Per-round stats exist.** The layout is wide: `f_{1,2}_r{1..5}_<stat>` with 21 stats per fighter per round (`sig_strikes_succ/att`, `total_strikes_*`, `td_1_succ/att`, `knockdowns`, `submission_att`, `reversals`, `ctrl`, head/body/leg and distance/clinch/ground splits). Whole-fight totals are in `f_{1,2}_<stat>`. The loader has to unpivot this wide layout into a per-round table. Coverage is complete from 2000 onward; 1994 to 1999 has gaps (for example 1994: 29 of 31 fights have round-1 stats). Round sums match the fight totals for sig strikes in 8,534 of 8,534 checked fights.
+
+**Data-quality problems to handle in the loader**
+- `result` is inconsistent: `'\n\n        \n KO/TKO \n'` (whitespace-padded) next to plain `'KO/TKO'`, and `'Decision'` next to `'Decision - Unanimous'`. Needs normalizing to one method vocabulary.
+- 7 fights have a `winner` that matches neither fighter name (draws / no contests).
+- **Fighter order is not random.** `winner == f_1_name` in 5,487 fights vs 3,061 for `f_2` (64%). In the two fights spot-checked, `f_1` was the champion / favorite. So f_1 vs f_2 carries information. The loader must not treat it as meaningful, and training must swap order randomly.
+
+**Leakage risks (CLAUDE.md rule 1)**
+- `f_{1,2}_fighter_SlpM`, `Str_Acc`, `SApM`, `Str_Def`, `TD_Avg`, `TD_Acc`, `TD_Def`, `Sub_Avg` and the `w`/`l`/`d`/`nc_dq` record columns are populated for all 8,555 fights. They look like **career snapshots from the time of scraping**, so for an old fight they include that fighter's future fights. **Do not load these as fight-time features.** The feature pipeline (1c) must compute everything from per-round facts.
+- Silver also contains `f_{1,2}_ranking`, `*_implied_prob`, `*_odds_legacy`, `*_ko_odds`, `*_sub_odds`, `*_bfo_best_decimal` and `odds_source`. Odds are present for 6,660 fights (legacy 5,530, bfo 1,130) and rankings for 2,009. D-006 assumed silver was "raw facts only". These columns are not raw facts, and we don't know when each was captured, so they are not used as features. Whether to use silver's odds or mdabbert's for the baseline is an open question for the Phase 1a plan.
+
+**Domain spot-check (compare with ufcstats.com).**
+- UFC 243, Whittaker vs Adesanya (2019-10-05): Adesanya by KO, round 2 at 3:33; R1 sig 17/66 vs 20/44 with a knockdown for Adesanya in R1 and R2.
+- UFC 254, Khabib vs Gaethje (2020-10-24): Khabib by triangle choke, round 2 at 1:34; R1 sig 23/60 vs 23/36, Khabib 1 of 2 takedowns.
+
+---
+
 ## Open items before Phase 1
 
-- [ ] Check `http://ufcstats.com/robots.txt` and the site footer from your own machine; record results in DECISIONS.md.
-- [ ] Open the jerzyszocik silver Parquet and confirm per-round columns and date range.
-- [ ] Decide on ESPN (recommended: remove) and update the CLAUDE.md architecture line.
+- [x] Check `http://ufcstats.com/robots.txt` and the site footer from your own machine; record results in DECISIONS.md. (D-004)
+- [x] Open the jerzyszocik silver Parquet and confirm per-round columns and date range. (see "Silver Parquet findings" below)
+- [x] Decide on ESPN (recommended: remove) and update the CLAUDE.md architecture line. (D-005)
 - [ ] Confirm MMA Fighting / MMA Junkie feed URLs and terms manually, or leave them out.
