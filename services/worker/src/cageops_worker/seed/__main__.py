@@ -18,8 +18,15 @@ from cageops_worker.seed.manifest import (
     ManifestMismatchError,
     verified_file,
 )
+from cageops_worker.seed.odds import (
+    RedCornerDisagreementError,
+    load_mdabbert,
+    load_silver_odds,
+    odds_summary,
+)
 from cageops_worker.seed.silver import load_silver
 
+MDABBERT = ("mdabbert/ultimate-ufc-dataset", "ufc-master.csv")
 SILVER = (
     "jerzyszocik/ufc-fight-forecast-complete-gold-modeling-dataset",
     "full_data_silver_plus.parquet",
@@ -40,6 +47,16 @@ def main(argv: list[str] | None = None) -> int:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 1
     reports.append(load_silver(engine, path, sha))
+    reports.append(load_silver_odds(engine, path, sha))
+    try:
+        mdabbert_path, mdabbert_sha = verified_file(*MDABBERT, args.raw_dir, args.manifest)
+        reports.append(load_mdabbert(engine, mdabbert_path, mdabbert_sha))
+    except (ManifestMismatchError, RedCornerDisagreementError) as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        if isinstance(exc, RedCornerDisagreementError):
+            print(json.dumps(exc.report, indent=2, default=str), file=sys.stderr)
+        return 1
+    reports.append(odds_summary(engine))
 
     print(json.dumps(reports, indent=2, default=str))
     return 0
