@@ -65,9 +65,13 @@ data/                      local-only raw data (gitignored)
 
 (Keep this section updated as things are built.)
 
+- `cp -n .env.example .env` — create local env file (never overwrites)
 - `docker compose up -d` — start Postgres (pgvector) + Redis locally
+- `docker compose down` — stop them (data kept); `docker compose down -v` also deletes local data
+- `uv sync --all-packages --all-groups` — install deps for every workspace package
 - `uv run pytest` — run tests
 - `uv run ruff check . && uv run ruff format .` — lint + format
+- `uv run --package cageops-api uvicorn cageops_api.main:app --port 8000` — run the API locally
 
 ## DECISIONS.md entry format
 
