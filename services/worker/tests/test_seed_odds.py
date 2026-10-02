@@ -14,6 +14,7 @@ from cageops_worker.seed.odds import (
     RedCornerDisagreementError,
     load_mdabbert,
     load_silver_odds,
+    load_verified_disagreements,
     match_mdabbert,
     odds_summary,
     silver_odds_rows,
@@ -248,3 +249,38 @@ def test_too_many_red_corner_disagreements_abort_without_writing(
             ).scalar_one()
             == 0
         )
+
+
+def test_verified_disagreements_are_listed_as_mdabbert_errors_in_the_report(tmp_path):
+    csv_path = tmp_path / "verified.csv"
+    csv_path.write_text(
+        "event_date,fighter_1,fighter_2,verdict,evidence\n"
+        '2019-10-05,Israel Adesanya,Robert Whittaker,mdabbert wrong,"checked on ufcstats"\n'
+    )
+    flipped = mrow(red_name="Israel Adesanya", blue_name="Robert Whittaker", winner="Blue")
+    other = mrow(
+        date=date(2022, 2, 12), red_name="Bobby Green", blue_name="Justin Gaethje", winner="Red"
+    )
+    fights = [FIGHT, FightRef(11, 3, 4, date(2022, 2, 12), red=3, winner=3, outcome="win")]
+
+    result = match_mdabbert(
+        [flipped, other],
+        fights,
+        NameResolver(NAMES, {("mdabbert", "bobby green"): 4}),
+        load_verified_disagreements(csv_path),
+    )
+
+    errors = result.report["verified_mdabbert_errors"]
+    assert len(errors) == 1
+    assert errors[0]["verdict"] == "mdabbert wrong"
+    assert errors[0]["fields"] == ["red_corner", "winner"]
+    assert errors[0]["evidence"] == "checked on ufcstats"
+    # the unverified disagreement (Green/Gaethje corners) is still in the raw list, not "verified"
+    assert result.report["red_corner_disagree"] == 2
+
+
+def test_committed_verified_disagreements_file_is_well_formed():
+    entries = load_verified_disagreements()
+
+    assert len(entries) == 2
+    assert all(e["verdict"] == "mdabbert wrong" and e["evidence"] for e in entries.values())

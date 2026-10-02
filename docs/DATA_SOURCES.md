@@ -308,14 +308,14 @@ different input, not a code change. The loader refuses to run if a file doesn't 
 | fight_totals | 17,068 | round sig-strike sums match totals in every checked fight |
 | odds, mdabbert | 6,907 | 7,160 of 7,177 rows matched (99.76%); 17 reported, not loaded |
 | odds, silver | 6,650 | 125 fights have silver odds and no mdabbert odds |
-| fighter_aliases | 96 | all `mdabbert`-scoped, reviewed |
+| fighter_aliases | 124 | all reviewed and scoped by source: 96 `mdabbert`, 16 `jerzyszocik`, 12 `martj42` |
 | rankings, jerzyszocik | 88,156 | 474 clean dates, 2013-02-04 to 2025-07-27 |
 | rankings, martj42 | 99,516 | 530 clean dates, 2013-02-04 to 2026-06-02 |
 
 - **Favorite agreement:** mdabbert and silver pick the same favorite in 98.1% of the 6,406 fights where both have odds (`bfo` 98.6%, `legacy` 98.0%). This shows the sources are consistent, not that silver's odds were known before the fight, so mdabbert stays the primary baseline source.
-- **mdabbert vs silver disagreements (logged in the load report):** 6 red-corner differences (Jotko vs Anders, Baeza vs Brown, Holland vs Hernandez, Landwehr vs Elkins on 2020-05-16; Emmers vs Chikadze 2020-03-07; Martin vs Jandiroba 2019-12-07) and 2 winner differences (Martin vs Jandiroba, where silver and the official result say Jandiroba won, and Davis vs Jones on 2021-01-20, still being checked against the official result). ufcstats-derived data (silver) is canonical.
+- **mdabbert vs silver disagreements (logged in the load report):** 6 red-corner differences (Jotko vs Anders, Baeza vs Brown, Holland vs Hernandez, Landwehr vs Elkins on 2020-05-16; Emmers vs Chikadze 2020-03-07; Martin vs Jandiroba 2019-12-07) and 2 winner differences (Martin vs Jandiroba and Davis vs Jones). Both were checked by hand and are **mdabbert errors**: Jandiroba won (silver has it, mdabbert has the corners flipped), and on ufcstats Mike Davis won Davis vs Jones by unanimous decision, referee Keith Peterson (mdabbert names Mason Jones). They are listed under `verified_mdabbert_errors` in the load report, from `verified_disagreements.csv`. ufcstats-derived data (silver) is canonical, and the other 5 red-corner differences are logged but unverified. The 14 mdabbert fights that silver doesn't have (e.g. Hall vs Souza, 2020-05-09, which was cancelled) are reported and skipped, never inserted.
 - **Rankings quality:** jerzyszocik's snapshots from 2025-08-03 onward (63 dates) hold two merged lists and are skipped; martj42 has 2 such dates (2025-09-16, 2026-05-19), also skipped. See D-011. Fights before the first snapshot (2013-02-04, 2,160 fights) have no rankings, and ranks are NULL when the latest snapshot is more than 21 days old.
-- **Unmatched ranking names:** 19 of 594 jerzyszocik names (3.2%) and 14 of 623 martj42 names (2.25%) don't resolve yet; reviewed alias candidates are pending, so they are not loaded.
+- **Unmatched ranking names:** 3 of 594 jerzyszocik names (0.51%, 8 rows) and 2 of 623 martj42 names (0.32%, 2 rows). The leftovers are Melissa Dixon and DeAnna Bennett (not in silver) and Jaime Alvarez (a candidate that was rejected as a different person).
 - **ufcstats.com and automated clients (found 2026-10-02):** a plain HTTP request to a fight page returned a JavaScript "Checking your browser" page instead of the content, and the site doesn't serve HTTPS. We don't try to get around a bot check. This is a risk for the Phase 1b live scraper, so Phase 1b has to start by checking what the site allows (D-004).
 
 ---

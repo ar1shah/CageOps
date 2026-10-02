@@ -23,7 +23,7 @@ from sqlalchemy import Engine, func, text
 from sqlalchemy.dialects.postgresql import insert
 
 from cageops_common.db.models import LoadRun, Odds
-from cageops_worker.seed.normalize import american_to_decimal, ufcstats_id
+from cageops_worker.seed.normalize import american_to_decimal, normalize_name, ufcstats_id
 from cageops_worker.seed.resolver import ALIASES_CSV, NameResolver, load_aliases
 from cageops_worker.seed.weight_class import fight_weight_class
 
@@ -32,6 +32,7 @@ from cageops_worker.seed.weight_class import fight_weight_class
 MAX_RED_DISAGREEMENTS = 10
 SAMPLE = 25
 MDABBERT = "mdabbert"  # source key for aliases (D-010)
+VERIFIED_CSV = Path(__file__).with_name("verified_disagreements.csv")
 
 
 class RedCornerDisagreementError(RuntimeError):
@@ -72,6 +73,23 @@ class MatchResult:
     report: dict[str, Any] = field(default_factory=dict)
 
 
+def load_verified_disagreements(
+    path: Path | None = VERIFIED_CSV,
+) -> dict[tuple[date, frozenset[str]], dict[str, str]]:
+    """Fights where mdabbert disagrees with ufcstats-derived data and a person has checked the
+    official result. Keyed by (date, the two normalized fighter names)."""
+    if path is None or not path.exists():
+        return {}
+    with path.open(newline="") as f:
+        return {
+            (
+                datetime.strptime(r["event_date"], "%Y-%m-%d").date(),
+                frozenset((normalize_name(r["fighter_1"]), normalize_name(r["fighter_2"]))),
+            ): r
+            for r in csv.DictReader(f)
+        }
+
+
 def _float(value: str) -> float | None:
     try:
         number = float(value)
@@ -97,7 +115,10 @@ def read_mdabbert(path: Path) -> list[MdabbertRow]:
 
 
 def match_mdabbert(
-    rows: list[MdabbertRow], fights: list[FightRef], resolver: NameResolver
+    rows: list[MdabbertRow],
+    fights: list[FightRef],
+    resolver: NameResolver,
+    verified: dict[tuple[date, frozenset[str]], dict[str, str]] | None = None,
 ) -> MatchResult:
     """Match each mdabbert row to a fight: exact date first, then +/-1 day. Pure function."""
     by_pair: dict[frozenset[int], list[FightRef]] = defaultdict(list)
@@ -109,6 +130,8 @@ def match_mdabbert(
     unmatched_fights: list[tuple[str, str, str]] = []
     red_disagreements: list[tuple[str, str, str]] = []
     winner_disagreements: list[tuple[str, str, str]] = []
+    verified_errors: dict[tuple[date, frozenset[str]], dict[str, Any]] = {}
+    verified = verified or {}
     result = MatchResult()
     seen: dict[int, MdabbertRow] = {}
 
@@ -145,6 +168,25 @@ def match_mdabbert(
         seen[fight.fight_id] = row
         counts[how] += 1
 
+        pair_key = (
+            fight.event_date,
+            frozenset((normalize_name(row.red_name), normalize_name(row.blue_name))),
+        )
+
+        def note_verified(field: str, key=pair_key, row=row) -> None:
+            if key in verified:
+                entry = verified_errors.setdefault(
+                    key,
+                    {
+                        "date": str(row.date),
+                        "fighters": [row.red_name, row.blue_name],
+                        "verdict": verified[key]["verdict"],
+                        "evidence": verified[key]["evidence"],
+                        "fields": [],
+                    },
+                )
+                entry["fields"].append(field)
+
         # Corner check: both sources must agree on who was red.
         if fight.red is not None:
             if fight.red == red.fighter_id:
@@ -152,6 +194,7 @@ def match_mdabbert(
             else:
                 counts["red_corner_disagree"] += 1
                 red_disagreements.append((str(row.date), row.red_name, row.blue_name))
+                note_verified("red_corner")
         # Winner check: a different winner means we matched the wrong fight.
         if row.winner in ("Red", "Blue"):
             expected = red.fighter_id if row.winner == "Red" else blue.fighter_id
@@ -160,6 +203,7 @@ def match_mdabbert(
             else:
                 counts["winner_disagree"] += 1
                 winner_disagreements.append((str(row.date), row.red_name, row.blue_name))
+                note_verified("winner")
         elif fight.outcome == "unknown":
             outcome = "draw" if row.winner == "Draw" else "no_contest"
             result.outcome_updates.append({"id": fight.fight_id, "outcome": outcome})
@@ -192,6 +236,8 @@ def match_mdabbert(
         "unmatched_fight_samples": unmatched_fights[:SAMPLE],
         "red_corner_disagreements": red_disagreements[:SAMPLE],
         "winner_disagreements": winner_disagreements[:SAMPLE],
+        # Disagreements a person checked against the official result (ufcstats is canonical).
+        "verified_mdabbert_errors": list(verified_errors.values()),
     }
     return result
 
@@ -229,7 +275,9 @@ def load_mdabbert(
         if aliases_csv is not None:
             load_aliases(conn, aliases_csv)
         resolver = NameResolver.from_db(conn)
-        result = match_mdabbert(rows, _fight_refs(conn), resolver)
+        result = match_mdabbert(
+            rows, _fight_refs(conn), resolver, load_verified_disagreements(VERIFIED_CSV)
+        )
         if result.report.get("red_corner_disagree", 0) > MAX_RED_DISAGREEMENTS:
             raise RedCornerDisagreementError(result.report)
         run_id = conn.execute(
