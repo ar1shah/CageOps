@@ -1,0 +1,10 @@
+[project]
+name = "cageops-trainer"
+version = "0.1.0"
+description = "Model training, evaluation, registry, backtests"
+requires-python = ">=3.12"
+dependencies = ["cageops-common"]
+
+[build-system]
+requires = ["uv_build>=0.12,<0.13"]
+build-backend = "uv_build"
