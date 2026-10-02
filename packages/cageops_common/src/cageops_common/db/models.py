@@ -108,7 +108,8 @@ class Fight(Base):
     # Corner is assigned before the fight, so it is a legitimate raw fact (Phase 1c decides
     # whether it becomes a feature). NULL when no source tells us.
     red_fighter_id: Mapped[int | None] = mapped_column(ForeignKey("fighters.id"))
-    weight_class: Mapped[str] = mapped_column(Text)
+    # NULL when the source says unknown (a few early fights and one 2025 row).
+    weight_class: Mapped[str | None] = mapped_column(Text)
     gender: Mapped[str] = mapped_column(String(1))
     is_title_fight: Mapped[bool] = mapped_column(Boolean)
     scheduled_rounds: Mapped[int | None] = mapped_column(SmallInteger)
