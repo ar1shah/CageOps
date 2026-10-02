@@ -50,6 +50,11 @@ uv run alembic -c packages/cageops_common/alembic.ini downgrade -1      # undo t
 uv run python -m cageops_worker.seed                                    # load seed data (idempotent)
 ```
 
+Downgrades work on an empty database (a test checks this). On a loaded one, going back past
+migration 0002 fails on purpose, because some fights have no weight class. To start over, reset
+the schema (`docker compose down -v`, or drop and recreate the `public` schema) and re-run the
+migrations and the loader; the result is identical.
+
 The loader checks every input file's sha256 against `docs/seed_manifest.json` and refuses to
 run on a mismatch. It prints a JSON report per source: rows read / loaded / rejected, what
 didn't match and why. Every run is also recorded in the `load_runs` table with the file hash.

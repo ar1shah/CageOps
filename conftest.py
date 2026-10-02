@@ -62,6 +62,11 @@ def engine() -> Engine:
 
 
 @pytest.fixture
+def alembic_config() -> Config:
+    return Config(str(ALEMBIC_INI))
+
+
+@pytest.fixture
 def db(engine: Engine) -> Engine:
     """An engine whose tables are empty at the start of each test."""
     with engine.begin() as conn:

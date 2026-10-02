@@ -1,6 +1,7 @@
 from datetime import date
 
 import pytest
+from alembic import command
 from alembic.autogenerate import compare_metadata
 from alembic.migration import MigrationContext
 from sqlalchemy import text
@@ -111,3 +112,28 @@ def test_odds_captured_at_can_be_unknown(db):
         captured = conn.execute(text("SELECT captured_at FROM odds")).scalar_one()
 
     assert captured is None
+
+
+def test_migrations_reverse_to_base_and_apply_again_on_an_empty_database(db, alembic_config):
+    """Every downgrade works when the tables are empty. (With data loaded, downgrading past
+    0002 fails on purpose: fights with a NULL weight_class can't go back to NOT NULL.)"""
+    with db.begin() as conn:
+        alembic_config.attributes["connection"] = conn
+        command.downgrade(alembic_config, "base")
+    with db.connect() as conn:
+        left = set(
+            conn.execute(
+                text("SELECT tablename FROM pg_tables WHERE schemaname = 'public'")
+            ).scalars()
+        )
+        views = conn.execute(
+            text("SELECT count(*) FROM pg_views WHERE schemaname = 'public'")
+        ).scalar_one()
+    assert left == {"alembic_version"} and views == 0
+
+    with db.begin() as conn:
+        alembic_config.attributes["connection"] = conn
+        command.upgrade(alembic_config, "head")
+    with db.connect() as conn:
+        diff = compare_metadata(MigrationContext.configure(conn), Base.metadata)
+    assert diff == []
