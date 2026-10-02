@@ -52,13 +52,18 @@ class Fighter(Base):
 
 
 class FighterAlias(Base):
-    """Extra spellings that resolve to a fighter (normalized form), e.g. a nickname."""
+    """An alternate spelling that resolves to a fighter, for ONE source only.
+
+    The key is (source, alias_norm): an alias seen in mdabbert rows must not resolve a
+    same-looking name in some other source, since common names ("Tim Johnson") and single
+    tokens ("Derrick") are different people elsewhere.
+    """
 
     __tablename__ = "fighter_aliases"
 
+    source: Mapped[str] = mapped_column(Text, primary_key=True)
     alias_norm: Mapped[str] = mapped_column(Text, primary_key=True)
     fighter_id: Mapped[int] = mapped_column(ForeignKey("fighters.id"))
-    source: Mapped[str] = mapped_column(Text)
 
 
 class Event(Base):
@@ -197,10 +202,15 @@ class Odds(Base):
 
 
 class Ranking(Base):
-    """One row of the weekly official rankings. rank 0 is the champion."""
+    """One row of the weekly official rankings from one source. rank 0 is the champion.
+
+    Only snapshots that are internally consistent are loaded (a fighter appearing twice in
+    one list means two lists were merged, so that whole snapshot date is skipped).
+    """
 
     __tablename__ = "rankings"
     __table_args__ = (
+        CheckConstraint("source IN ('jerzyszocik', 'martj42')", name="rankings_source_values"),
         CheckConstraint(
             "ranking_type IN ('division', 'pound_for_pound')", name="ranking_type_values"
         ),
@@ -208,6 +218,7 @@ class Ranking(Base):
         Index("ix_rankings_fighter_snapshot", "fighter_id", "snapshot_date"),
     )
 
+    source: Mapped[str] = mapped_column(Text, primary_key=True)
     snapshot_date: Mapped[date] = mapped_column(Date, primary_key=True)
     ranking_type: Mapped[str] = mapped_column(Text, primary_key=True)
     weight_class: Mapped[str] = mapped_column(Text, primary_key=True)

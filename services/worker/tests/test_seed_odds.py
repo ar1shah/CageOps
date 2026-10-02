@@ -83,7 +83,7 @@ def test_alias_lets_a_renamed_fighter_match():
         red_name="Bobby Green", blue_name="Justin Gaethje", date=date(2022, 2, 12), winner="Red"
     )
 
-    result = match([row], fights, aliases={"bobby green": 4})
+    result = match([row], fights, aliases={("mdabbert", "bobby green"): 4})
 
     assert result.report["matched_exact_date"] == 1
 
@@ -196,8 +196,8 @@ def test_odds_load_end_to_end_is_idempotent_and_reports_favorite_agreement(
     load_silver_odds(db, silver, "s")
     mdabbert = write_mdabbert(tmp_path, GOOD_ROWS)
 
-    first = load_mdabbert(db, mdabbert, "m")
-    load_mdabbert(db, mdabbert, "m")
+    first = load_mdabbert(db, mdabbert, "m", aliases_csv=None)
+    load_mdabbert(db, mdabbert, "m", aliases_csv=None)
     summary = odds_summary(db)
 
     assert first["matched_exact_date"] == 2
@@ -237,7 +237,7 @@ def test_too_many_red_corner_disagreements_abort_without_writing(
     ]
 
     with pytest.raises(RedCornerDisagreementError) as caught:
-        load_mdabbert(db, write_mdabbert(tmp_path, flipped), "m")
+        load_mdabbert(db, write_mdabbert(tmp_path, flipped), "m", aliases_csv=None)
 
     assert caught.value.report["red_corner_disagree"] == MAX_RED_DISAGREEMENTS + 1
     with db.connect() as conn:

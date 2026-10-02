@@ -24,13 +24,14 @@ from sqlalchemy.dialects.postgresql import insert
 
 from cageops_common.db.models import LoadRun, Odds
 from cageops_worker.seed.normalize import american_to_decimal, ufcstats_id
-from cageops_worker.seed.resolver import NameResolver, load_aliases
+from cageops_worker.seed.resolver import ALIASES_CSV, NameResolver, load_aliases
 from cageops_worker.seed.weight_class import fight_weight_class
 
 # More red-corner disagreements than this between silver and mdabbert means the two files
 # disagree about who was in the red corner, so the loader stops instead of guessing.
 MAX_RED_DISAGREEMENTS = 10
 SAMPLE = 25
+MDABBERT = "mdabbert"  # source key for aliases (D-010)
 
 
 class RedCornerDisagreementError(RuntimeError):
@@ -112,8 +113,12 @@ def match_mdabbert(
     seen: dict[int, MdabbertRow] = {}
 
     for row in rows:
-        red = resolver.resolve(row.red_name, weight_class=row.weight_class, on=row.date)
-        blue = resolver.resolve(row.blue_name, weight_class=row.weight_class, on=row.date)
+        red = resolver.resolve(
+            row.red_name, source=MDABBERT, weight_class=row.weight_class, on=row.date
+        )
+        blue = resolver.resolve(
+            row.blue_name, source=MDABBERT, weight_class=row.weight_class, on=row.date
+        )
         if red.fighter_id is None or blue.fighter_id is None:
             counts["unmatched_name"] += 1
             for name, res in ((row.red_name, red), (row.blue_name, blue)):
@@ -216,10 +221,13 @@ def _upsert_odds(conn, rows: list[dict[str, Any]]) -> None:
         conn.execute(stmt, rows[start : start + 2000])
 
 
-def load_mdabbert(engine: Engine, path: Path, sha256: str) -> dict[str, Any]:
+def load_mdabbert(
+    engine: Engine, path: Path, sha256: str, aliases_csv: Path | None = ALIASES_CSV
+) -> dict[str, Any]:
     rows = read_mdabbert(path)
     with engine.begin() as conn:
-        load_aliases(conn)
+        if aliases_csv is not None:
+            load_aliases(conn, aliases_csv)
         resolver = NameResolver.from_db(conn)
         result = match_mdabbert(rows, _fight_refs(conn), resolver)
         if result.report.get("red_corner_disagree", 0) > MAX_RED_DISAGREEMENTS:

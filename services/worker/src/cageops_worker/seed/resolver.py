@@ -2,6 +2,8 @@
 
 Rules (D-010):
 - Match on the normalized name (accents stripped, punctuation dropped).
+- Aliases are scoped by source: an alias reviewed for mdabbert rows never resolves a name
+  coming from another source.
 - If a name maps to more than one fighter, NEVER pick one. Narrow by when the fighter was
   active and the weight class, and if that doesn't leave exactly one, report it as ambiguous.
 - Anything left over is unmatched. Callers keep those rows with a NULL fighter id and list
@@ -34,7 +36,7 @@ class NameResolver:
     def __init__(
         self,
         fighters: dict[int, str],
-        aliases: dict[str, int] | None = None,
+        aliases: dict[tuple[str, str], int] | None = None,
         activity: dict[int, list[tuple[date, str | None]]] | None = None,
     ):
         self._by_name: dict[str, list[int]] = defaultdict(list)
@@ -44,15 +46,20 @@ class NameResolver:
         self._activity = activity or {}
 
     def resolve(
-        self, name: str, *, weight_class: str | None = None, on: date | None = None
+        self,
+        name: str,
+        *,
+        source: str,
+        weight_class: str | None = None,
+        on: date | None = None,
     ) -> Resolution:
         key = normalize_name(name)
         candidates = self._by_name.get(key, [])
         if len(candidates) == 1:
             return Resolution(candidates[0], "matched")
         if not candidates:
-            if key in self._aliases:
-                return Resolution(self._aliases[key], "alias")
+            if (source, key) in self._aliases:
+                return Resolution(self._aliases[(source, key)], "alias")
             return Resolution(None, "unmatched")
         narrowed = self._narrow(candidates, weight_class, on)
         if len(narrowed) == 1:
@@ -81,8 +88,10 @@ class NameResolver:
     def from_db(cls, conn: Connection, aliases_csv: Path | None = ALIASES_CSV) -> NameResolver:
         fighters = dict(conn.execute(text("SELECT id, name FROM fighters")).all())
         aliases = {
-            normalize_name(row[0]): row[1]
-            for row in conn.execute(text("SELECT alias_norm, fighter_id FROM fighter_aliases"))
+            (row[0], row[1]): row[2]
+            for row in conn.execute(
+                text("SELECT source, alias_norm, fighter_id FROM fighter_aliases")
+            )
         }
         activity: dict[int, list[tuple[date, str | None]]] = defaultdict(list)
         for fighter_id, event_date, weight_class in conn.execute(
@@ -97,7 +106,7 @@ class NameResolver:
 
 
 def load_aliases(conn: Connection, csv_path: Path = ALIASES_CSV) -> int:
-    """Upsert the reviewed alias list (alias, ufcstats_id) into fighter_aliases."""
+    """Upsert the reviewed alias list (source, alias, ufcstats_id) into fighter_aliases."""
     if not csv_path.exists():
         return 0
     with csv_path.open(newline="") as f:
@@ -112,11 +121,15 @@ def load_aliases(conn: Connection, csv_path: Path = ALIASES_CSV) -> int:
             )
         conn.execute(
             text(
-                "INSERT INTO fighter_aliases (alias_norm, fighter_id, source)"
-                " VALUES (:alias, :fid, 'reviewed_csv')"
-                " ON CONFLICT (alias_norm) DO UPDATE SET fighter_id = excluded.fighter_id"
+                "INSERT INTO fighter_aliases (source, alias_norm, fighter_id)"
+                " VALUES (:source, :alias, :fid)"
+                " ON CONFLICT (source, alias_norm) DO UPDATE SET fighter_id = excluded.fighter_id"
             ),
-            {"alias": normalize_name(row["alias"]), "fid": fighter_id},
+            {
+                "source": row["source"].strip(),
+                "alias": normalize_name(row["alias"]),
+                "fid": fighter_id,
+            },
         )
         loaded += 1
     return loaded
