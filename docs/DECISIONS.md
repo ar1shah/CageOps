@@ -38,3 +38,30 @@ Every meaningful design decision gets an entry. Format:
   3. Defer the choice to whichever managed Postgres we pick later.
 - Decision: PostgreSQL 16. It's what the project spec calls for, it's mature, and pgvector images for it are well tested. 17's improvements (vacuum and memory efficiency, incremental backup) don't matter at our data size.
 - Tradeoff: we give up 17's newer features and a slightly longer support window. Revisit before the production deploy (Phase 2c/6), or sooner if a needed feature or pgvector release requires 17. A major upgrade is a dump/restore, which the Phase 6 backup work will exercise anyway.
+
+### D-004: ufcstats.com access policy
+- Context: the data source audit (docs/DATA_SOURCES.md) couldn't retrieve robots.txt. A manual check on 2026-10-01 found that `http://ufcstats.com/robots.txt` returns 404 (no crawl rules published), and the site footer has no terms of use or any language about scraping.
+- Options considered:
+  1. Scrape with no safeguards, since no rules exist.
+  2. Scrape politely anyway.
+  3. Don't scrape; rely only on Kaggle snapshots.
+- Decision: scrape politely anyway (option 2). The limits are ~1 request/second globally, shared across all workers; a raw HTML cache so pages are never re-fetched unless forced; and a descriptive User-Agent with a contact email. The scraper fetches robots.txt on startup and treats a 404 as "allowed", but would honor any rules or Crawl-delay that appear later.
+- Tradeoff: the absence of terms is not permission, so some legal and ethical risk remains. A slower backfill is the cost of being polite. Revisit if the site adds terms or robots rules, or if we get contacted.
+
+### D-005: Drop the ESPN MMA API as a data source
+- Context: the audit found that the Disney Terms of Use explicitly prohibit automated extraction and use of content for AI/ML training, testing, or benchmarking, and limit use to personal, noncommercial. The endpoints are also undocumented and unstable.
+- Options considered:
+  1. Use ESPN anyway.
+  2. Use it for the non-ML parts only.
+  3. Drop it.
+- Decision: drop it (option 3). Everything it offered (results, stats, odds, rankings) is covered by ufcstats plus the Kaggle datasets. "ESPN MMA API" is removed from the architecture diagram in CLAUDE.md.
+- Tradeoff: we lose a redundant source and a possible live-odds feed. Revisit only if ESPN publishes an official API with permissive terms.
+
+### D-006: Seed data strategy
+- Context: several Kaggle UFC datasets exist, and some ship precomputed rolling features that we can't prove are point-in-time correct (CLAUDE.md rule 1).
+- Options considered:
+  1. One all-in-one dataset with precomputed features.
+  2. The mdabbert dataset for everything.
+  3. Raw facts from the jerzyszocik "silver" file, plus separate odds and rankings sources.
+- Decision: option 3. Stats come from jerzyszocik silver (raw per-round facts, the same shape the scraper produces). Odds come from mdabbert (CC BY 4.0), used as a baseline only and never as model features. Rankings come from the jerzyszocik rankings history. The "golden" precomputed features are NOT loaded.
+- Tradeoff: more loaders and a join across sources, in exchange for a single raw schema shared by seed and scraped data and a leakage test that actually means something. Revisit if silver turns out to lack per-round columns or has bad date coverage.

@@ -15,7 +15,7 @@ Ari is a CS senior (UCF, graduating May 2027) with solid TypeScript / Next.js / 
 ## Architecture
 
 ```
-Data sources: ufcstats.com scraper, Kaggle seed data, ESPN MMA API, MMA news RSS
+Data sources: ufcstats.com scraper, Kaggle seed data, MMA news RSS
   -> Ingestion: Python workers consuming a Redis-backed job queue (RQ), retries + dead-letter queue
   -> Storage: PostgreSQL 16 + pgvector (raw tables, point-in-time feature tables, text chunks + embeddings)
   -> Training: scheduled retraining job (LightGBM), versioned models in a Postgres-backed registry
