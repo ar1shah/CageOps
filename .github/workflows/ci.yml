@@ -1,0 +1,43 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      # Actions are pinned to commit SHAs (tag in the comment): tags can be moved, SHAs can't.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # Same uv version as local dev so lockfile behavior matches.
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          version: "0.12.21"
+          enable-cache: true
+
+      - name: Install dependencies (fails if uv.lock is stale)
+        run: uv sync --locked --all-packages --all-groups
+
+      - name: Lint
+        run: uv run ruff check .
+
+      - name: Format check
+        run: uv run ruff format --check .
+
+      - name: Test
+        run: uv run pytest
+
+      # Validates the compose file and variable interpolation using placeholder values.
+      # Does not pull images or start containers.
+      - name: Validate docker-compose.yml
+        run: docker compose --env-file .env.example config --quiet
