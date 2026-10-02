@@ -6,13 +6,13 @@ Not affiliated with the UFC. Not betting advice.
 
 ## Status
 
-Phase 0 (scaffold): in progress. See [docs/ROADMAP.md](docs/ROADMAP.md).
+Phase 0 (scaffold): complete, pending merge. See [docs/ROADMAP.md](docs/ROADMAP.md).
 
 - [x] uv workspace with `cageops_common` and scraper / worker / api / trainer stubs
 - [x] API with a working `/healthz`
 - [x] Local Postgres 16 (pgvector) + Redis 7 via docker compose
 - [x] ruff + pytest, one test per package
-- [x] CI: lint, format, tests, compose validation on every PR (first run pending until a PR is opened)
+- [x] CI: lint, format, tests, compose validation on every PR (passing on PR #1)
 - [ ] Phase 1: data pipeline
 - [ ] Phase 2: model, API, first deploy
 - [ ] Phase 3: frontend
