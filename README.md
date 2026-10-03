@@ -6,7 +6,7 @@ Not affiliated with the UFC. Not betting advice.
 
 ## Status
 
-Phase 0 (scaffold): complete and merged. Phase 1a (seed data): in progress. See [docs/ROADMAP.md](docs/ROADMAP.md).
+Phase 0 (scaffold) and Phase 1a (seed data): complete and merged. Phase 1b (live scraper): not started. See [docs/ROADMAP.md](docs/ROADMAP.md).
 
 - [x] uv workspace with `cageops_common` and scraper / worker / api / trainer stubs
 - [x] API with a working `/healthz`
@@ -14,7 +14,7 @@ Phase 0 (scaffold): complete and merged. Phase 1a (seed data): in progress. See 
 - [x] ruff + pytest, one test per package
 - [x] CI: lint, format, tests, compose validation on every PR (passing on PR #1)
 - [ ] Phase 1: data pipeline
-  - [ ] 1a (in progress, PR pending): schema, Alembic migrations, reproducible seed download with sha256 manifest, idempotent loaders, point-in-time rankings view, tests on real Postgres in CI
+  - [x] 1a: schema, Alembic migrations, reproducible seed download with sha256 manifest, idempotent loaders, point-in-time rankings view, tests on real Postgres in CI
   - [ ] 1b: live scraper + job queue
   - [ ] 1c: point-in-time feature pipeline
 - [ ] Phase 2: model, API, first deploy
