@@ -83,6 +83,12 @@ For each fight, compute each fighter's features using ONLY fights strictly befor
 Store in a fight_features table keyed by (fight_id, fighter_id). Write a test that proves there's no leakage — e.g., change a future fight's stats and assert past features don't change. Make it rebuildable from scratch with one command.
 ```
 
+### Phase 1d — a results source that permits automated access (added 2026-10-03, do before Phase 5)
+ufcstats.com put every content page behind a bot challenge on 2026-10-03, and we don't bypass it (D-013). That leaves a gap from June 2026 (where the Kaggle seed stops) to today, and Phase 5 needs fresh results to grade predictions.
+- Research first: the Wikipedia / MediaWiki API terms (rate limits, User-Agent policy, CC BY-SA attribution) and any alternatives; log what was checked and when in DATA_SOURCES.md and DECISIONS.md.
+- Add it as a new `Source` in the Phase 1b fetcher (same queue, cache, rate limiter, DLQ). Expect results, method, round and time, but probably no per-round stats; store what it has and leave stats NULL.
+- If the ufcstats operator grants access in the meantime, re-run the 1b backfill against the live site instead.
+
 ### Done when
 - [ ] Seed data loaded; row counts documented; loader reruns cleanly
 - [ ] Scraper backfills 12 months idempotently; dead-letter queue works

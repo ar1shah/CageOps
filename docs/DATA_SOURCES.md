@@ -23,7 +23,9 @@ ufcstats.com is the public stats site built on FightMetric data. FightMetric bec
 
 Pages are served over plain HTTP with 16-character hex IDs, e.g. `http://ufcstats.com/fighter-details/032cc3922d871c7f` ([example fighter page](http://ufcstats.com/fighter-details/032cc3922d871c7f)).
 
-### 1.2 robots.txt **[UNVERIFIED]**
+### 1.2 robots.txt (verified 2026-10-01 and 2026-10-03)
+
+**Update 2026-10-03:** `http://ufcstats.com/robots.txt` returns `404 Not Found` (checked 2026-10-01 and again 2026-10-03), so there are no crawl rules and no Crawl-delay. But every content page (homepage, events list, fight pages) now returns a "Checking your browser" proof-of-work challenge instead of content, so the footer couldn't be read either. We don't bypass it; see D-013. The original audit notes follow.
 
 I could not retrieve `ufcstats.com/robots.txt` during this audit: both the `http://` and `https://` fetches failed at the connection level from my research environment, so **I cannot tell you its current contents**. I did not try to work around that.
 
@@ -326,4 +328,5 @@ different input, not a code change. The loader refuses to run if a file doesn't 
 - [x] Open the jerzyszocik silver Parquet and confirm per-round columns and date range. (see "Silver Parquet findings" below)
 - [x] Decide on ESPN (recommended: remove) and update the CLAUDE.md architecture line. (D-005)
 - [ ] Confirm MMA Fighting / MMA Junkie feed URLs and terms manually, or leave them out.
-- [ ] Phase 1b: find a live rankings source for upcoming fights (martj42 ends 2026-06-02) and settle how to reach ufcstats given the browser check above.
+- [ ] Phase 1b: find a live rankings source for upcoming fights (martj42 ends 2026-06-02).
+- [x] Settle how to reach ufcstats given the browser check above: we don't bypass it. Build against fixtures and a replay server, ask the operator for access, and add a permitted results source in Phase 1d (D-013, 2026-10-03).
