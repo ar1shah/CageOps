@@ -76,6 +76,7 @@ data/                      local-only raw data (gitignored)
 - `scripts/download_seed.sh [--force]` — download seed data to `data/raw/` and write the sha256 manifest (needs `~/.kaggle/` credentials)
 - `uv run --package cageops-api uvicorn cageops_api.main:app --port 8000` — run the API locally
 - `uv run python scripts/minimize_fixture.py data/fixtures/ufcstats/*.html --out services/scraper/tests/fixtures/ufcstats` — shrink hand-saved ufcstats pages into committable fixtures (deletes only; full pages stay in gitignored `data/fixtures/`, D-017)
+- `uv run python -m cageops_scraper.parsers services/scraper/tests/fixtures/ufcstats/fight_32054bf2b36b0e47.html` — print what a parser makes of a saved page, as JSON (file only, no network; kind and URL come from the file name)
 
 ## DECISIONS.md entry format
 
