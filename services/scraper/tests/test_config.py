@@ -45,3 +45,23 @@ def test_env_variables_are_read(monkeypatch):
 
     assert settings.scraper_user_agent == UA
     assert settings.scraper_timeout_s == 7
+
+
+def test_a_quoted_value_in_a_dotenv_file_is_read_without_the_quotes(tmp_path):
+    env = tmp_path / ".env"
+    env.write_text(f'SCRAPER_USER_AGENT="{UA}"\n')
+
+    settings = ScraperSettings(_env_file=env)
+
+    assert settings.scraper_user_agent == UA
+
+
+def test_env_example_has_a_quoted_user_agent_and_still_fails_on_the_placeholder():
+    from pathlib import Path
+
+    example = Path(__file__).parents[3] / ".env.example"
+
+    with pytest.raises(ValidationError, match="placeholder"):
+        ScraperSettings(_env_file=example)
+    line = next(x for x in example.read_text().splitlines() if x.startswith("SCRAPER_USER_AGENT="))
+    assert line.split("=", 1)[1].startswith('"') and line.endswith('"')

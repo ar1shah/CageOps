@@ -322,6 +322,22 @@ different input, not a code change. The loader refuses to run if a file doesn't 
 
 ---
 
+## ufcstats page structure (verified 2026-10-03)
+
+Read from the hand-saved fixtures in `services/scraper/tests/fixtures/ufcstats/` (minimized, D-017) and checked against the Phase 1a seed. This is what the Phase 1b parsers (D-018) are built on. Details that surprised us are in bold.
+
+| Page | Gives | Quirks |
+|---|---|---|
+| Events list (`/statistics/events/completed`, `/upcoming`) | one row per event: id (in the link), name, date, location | **the first row of the completed list is the next upcoming event** (a `next.png` icon; flagged by the parser, not treated as completed); 25 rows per page with pagination links; `?page=all` is used by other scrapers but was not verified here |
+| Event page (`/event-details/<id>`) | name, date, location, one row per bout: fight id, both fighters, W/L flag (`win`, `draw`, `nc`), weight class, method **abbreviated** (`U-DEC`, `S-DEC`, `M-DEC`, `KO/TKO`, `SUB`), round, time | **the winner is listed first** (Malott above Burns on a card billed "Burns vs. Malott"), so row order carries the outcome; for a draw the order is the card's; an upcoming event has the same rows with everything but the fighters and weight class blank |
+| Fight page (`/fight-details/<id>`) | W/L/D/NC badge per fighter, bout title, method in full (`Decision - Unanimous`), round, time, time format, referee, details (judges' scores, strike or submission name), totals, per-round totals, significant-strike breakdown (head/body/leg, distance/clinch/ground), overall and per round | **first fighter = red corner** (matches the seed's red corner in 6 of 6 fixtures); **no date on the page**; **per-round tables put `<thead>` rows ("Round 1") inside `<tbody>`**; the per-round header says "Td %" twice (a typo; read columns by position); `---` appears for a percentage with zero attempts, while `0 of 0` is a real zero; a 1998 fight has no tables, only "Round-by-round stats not currently available."; the bout title carries the title fight ("UFC Heavyweight Title Bout") and a trailing "Bout" the seed's weight-class table doesn't have; the "Details" text can be junk (`to`) |
+| Fighter page (`/fighter-details/<id>`) | name, nickname, height `5' 10"`, reach `71"`, stance, DOB `Jul 20, 1986` | **career rates (SLpM, accuracy, ...) and the record are on the same list, "as of today", and are never read** (rule 1); a missing value is `--` (an empty stance is just blank); heights and reach convert to exactly the seed's centimetres (Burns 177.8 / 180.34) |
+
+Differences between these pages and the seed, found while writing the parsers (to be handled, and tested against a real database, in checkpoint 3):
+- Marwan Rahiki: the seed has reach and DOB NULL; the site now publishes 72" and May 10, 2002 (filled in after our seed).
+- Vologdin vs Castaneda: seed `outcome='unknown'`; the page says draw (majority decision).
+- Santos vs Marscucci (1998): seed `finish_time_sec = 27`; the page says 10:27 (627 s, "1 Rnd + OT (12-3)"). Probably a seed bug.
+
 ## Open items before Phase 1
 
 - [x] Check `http://ufcstats.com/robots.txt` and the site footer from your own machine; record results in DECISIONS.md. (D-004)
