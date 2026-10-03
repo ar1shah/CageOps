@@ -210,18 +210,144 @@ def test_429_without_retry_after_backs_off_for_a_minute(fetcher, site):
     assert 59_000 < fetcher.limiter.reserve(1000).wait_ms <= 60_000
 
 
-def test_other_4xx_and_redirects_are_permanent_and_not_cached(fetcher, site, db):
+def test_other_4xx_is_permanent_and_not_cached(fetcher, site, db):
     site.add(FIGHT, status=410)
-    site.add(FIGHTER, status=301, Location="http://elsewhere.example/x")
 
     with pytest.raises(PermanentFetchError) as gone:
         fetcher.fetch(FIGHT, PageKind.FIGHT, EVENT_DATE)
-    with pytest.raises(PermanentFetchError, match="redirect") as moved:
+
+    assert gone.value.status == 410
+    assert raw_pages(db) == {}
+
+
+# -- redirects ----------------------------------------------------------------------------
+
+MOVED = "http://ufcstats.com/fight-details/aaaa000000000002"
+HTTPS_FIGHT = "https://ufcstats.com/fight-details/aaaa000000000001"
+
+
+def test_a_same_host_redirect_is_followed_and_each_hop_takes_a_rate_limit_slot(
+    fetcher, site, db, sleeps
+):
+    site.add(FIGHT, status=301, Location="/fight-details/aaaa000000000002")  # relative Location
+    site.add(MOVED, "<html>moved here</html>")
+
+    page = fetcher.fetch(FIGHT, PageKind.FIGHT, EVENT_DATE)
+
+    assert page.html == "<html>moved here</html>"
+    assert site.urls == [FIGHT, MOVED]
+    assert len(sleeps) == 1  # two requests, so the second one waited for its own slot
+    assert set(raw_pages(db)) == {FIGHT, MOVED}  # asking for the old URL again is a cache hit
+
+
+def test_after_a_redirect_asking_for_the_old_url_again_sends_no_request(fetcher, site):
+    site.add(FIGHT, status=301, Location=MOVED)
+    site.add(MOVED, "<html>moved here</html>")
+    fetcher.fetch(FIGHT, PageKind.FIGHT, EVENT_DATE)
+
+    again = fetcher.fetch(FIGHT, PageKind.FIGHT, EVENT_DATE)
+
+    assert again.from_cache and again.html == "<html>moved here</html>"
+    assert len(site.requests) == 2
+
+
+def test_an_http_to_https_redirect_is_really_requested_over_https(fetcher, site, db):
+    site.add(FIGHT, status=301, Location=HTTPS_FIGHT)
+    site.add(HTTPS_FIGHT, "<html>secure</html>")
+
+    page = fetcher.fetch(FIGHT, PageKind.FIGHT, EVENT_DATE)
+
+    assert page.html == "<html>secure</html>"
+    assert site.urls == [FIGHT, HTTPS_FIGHT]
+    assert list(raw_pages(db)) == [FIGHT]  # one cache row: the canonical spelling
+
+
+def test_an_https_to_http_redirect_is_followed_too(make_fetcher, site):
+    secure_source = UfcStatsSource("ufcstats", "https://ufcstats.com")
+    fetcher = make_fetcher(source=secure_source)
+    site.add(HTTPS_FIGHT, status=302, Location=FIGHT)
+    site.add(FIGHT, "<html>plain</html>")
+
+    page = fetcher.fetch(HTTPS_FIGHT, PageKind.FIGHT, EVENT_DATE)
+
+    assert page.html == "<html>plain</html>"
+    assert site.urls == [HTTPS_FIGHT, FIGHT]
+
+
+def test_a_redirect_to_another_site_is_a_permanent_error_and_nothing_is_cached(fetcher, site, db):
+    site.add(FIGHTER, status=301, Location="http://elsewhere.example/x")
+
+    with pytest.raises(PermanentFetchError, match="cross-host redirect") as moved:
         fetcher.fetch(FIGHTER, PageKind.FIGHTER)
 
-    assert (gone.value.status, moved.value.status) == (410, 301)
-    assert site.urls == [FIGHT, FIGHTER]  # the redirect was not followed
+    assert moved.value.status == 301
+    assert site.urls == [FIGHTER]  # the other site was never contacted
     assert raw_pages(db) == {}
+
+
+def test_a_redirect_gives_up_after_three_hops(fetcher, site):
+    chain = [f"http://ufcstats.com/fight-details/hop{n}" for n in range(6)]
+    for here, there in zip(chain, chain[1:], strict=False):
+        site.add(here, status=301, Location=there)
+
+    with pytest.raises(PermanentFetchError, match="too many redirects"):
+        fetcher.fetch(chain[0], PageKind.FIGHT, EVENT_DATE)
+
+    assert site.urls == chain[:4]  # the original request plus three followed hops
+
+
+def test_three_hops_is_still_allowed(fetcher, site):
+    chain = [f"http://ufcstats.com/fight-details/hop{n}" for n in range(4)]
+    for here, there in zip(chain, chain[1:], strict=False):
+        site.add(here, status=301, Location=there)
+    site.pages[chain[-1]] = (200, "<html>end</html>", {})
+
+    assert fetcher.fetch(chain[0], PageKind.FIGHT, EVENT_DATE).html == "<html>end</html>"
+
+
+def test_a_redirect_loop_ends_at_the_hop_limit(fetcher, site):
+    other = "http://ufcstats.com/fight-details/loop"
+    site.add(FIGHT, status=301, Location=other)
+    site.add(other, status=301, Location=FIGHT)
+
+    with pytest.raises(PermanentFetchError, match="too many redirects"):
+        fetcher.fetch(FIGHT, PageKind.FIGHT, EVENT_DATE)
+
+    assert len(site.requests) == 4
+
+
+def test_a_redirect_without_a_location_is_permanent(fetcher, site):
+    site.add(FIGHT, status=301)
+
+    with pytest.raises(PermanentFetchError, match="unfollowable"):
+        fetcher.fetch(FIGHT, PageKind.FIGHT, EVENT_DATE)
+
+
+def test_a_challenge_page_behind_a_redirect_still_trips_the_breaker(
+    fetcher, site, db, challenge_html
+):
+    site.add(FIGHT, status=301, Location=MOVED)
+    site.add(MOVED, challenge_html)
+
+    with pytest.raises(SourceBlocked):
+        fetcher.fetch(FIGHT, PageKind.FIGHT, EVENT_DATE)
+
+    assert fetcher.breaker.state() is not None
+    assert raw_pages(db) == {}
+    with pytest.raises(SourceBlocked):
+        fetcher.fetch(FIGHTER, PageKind.FIGHTER)
+    assert len(site.requests) == 2  # nothing more was sent
+
+
+def test_every_redirect_logs_its_location(fetcher, site, caplog):
+    site.add(FIGHT, status=301, Location=MOVED)
+    site.add(MOVED)
+
+    with caplog.at_level("INFO", logger="cageops_scraper.fetch"):
+        fetcher.fetch(FIGHT, PageKind.FIGHT, EVENT_DATE)
+
+    redirects = [r for r in caplog.records if r.getMessage() == "redirect"]
+    assert [(r.status, r.location, r.hop) for r in redirects] == [(301, MOVED, 1)]
 
 
 # -- politeness ---------------------------------------------------------------------------

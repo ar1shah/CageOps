@@ -7,6 +7,9 @@ The path of one request:
         -> GET -> classify the answer (cache it, retry it, or trip the breaker)
 
 Cache hits return before the rate limiter, so a run served from cache never waits on it.
+A same-site redirect is followed by running that whole path again on the Location URL (so every
+hop is cached, checked against the breaker and takes its own rate-limit slot), up to
+MAX_REDIRECTS hops. A redirect to another site is a permanent error.
 """
 
 from __future__ import annotations
@@ -15,6 +18,7 @@ import logging
 import time
 from collections.abc import Callable
 from datetime import UTC, date, datetime
+from urllib.parse import urljoin
 
 import httpx
 from redis import Redis
@@ -40,6 +44,8 @@ log = logging.getLogger(__name__)
 
 DEFAULT_RETRY_AFTER_S = 60
 MAX_RETRY_AFTER_S = 3600
+MAX_REDIRECTS = 3
+REDIRECT_STATUSES = {301, 302, 303, 307, 308}
 
 
 def _utcnow() -> datetime:
@@ -103,12 +109,20 @@ class Fetcher:
         event page stops changing). force=True skips the cache read but still obeys the circuit
         breaker and the rate limiter, and stores the new copy.
         """
-        url = self.source.canonical_url(url)
-        with log_context(url=url):
-            cached = self._read_cache(url, kind, event_date, force)
+        # The first request goes to the canonical spelling. A redirect hop goes to the Location
+        # exactly as given (so an http -> https hop really is requested over https), while its
+        # cache entry is still filed under the canonical URL.
+        return self._fetch(self.source.canonical_url(url), kind, event_date, force, hops=0)
+
+    def _fetch(
+        self, request_url: str, kind: PageKind, event_date: date | None, force: bool, hops: int
+    ) -> Page:
+        key = self.source.canonical_url(request_url)
+        with log_context(url=key):
+            cached = self._read_cache(key, kind, event_date, force)
             if cached is not None:
                 return cached
-            return self._fetch_live(url, kind)
+            return self._fetch_live(request_url, key, kind, event_date, force, hops)
 
     # -- cache ---------------------------------------------------------------------------
 
@@ -134,35 +148,75 @@ class Fetcher:
 
     # -- live request --------------------------------------------------------------------
 
-    def _fetch_live(self, url: str, kind: PageKind) -> Page:
+    def _fetch_live(
+        self,
+        request_url: str,
+        key: str,
+        kind: PageKind,
+        event_date: date | None,
+        force: bool,
+        hops: int,
+    ) -> Page:
         self._raise_if_blocked()
         self.limiter.acquire(self.interval_ms)
         self._raise_if_blocked()  # another worker may have tripped it while we waited
 
-        response = self._get(url)
+        response = self._get(request_url)
         status = response.status_code
         html = response.text
 
         reason = self.source.block_reason(status, html)
         if reason is not None:
-            self._trip(reason, url)
-            raise SourceBlocked(reason, url)  # never cached, never retried
+            self._trip(reason, request_url)
+            raise SourceBlocked(reason, request_url)  # never cached, never retried
         if status == 200:
-            return self._store(url, status, html)
+            return self._store(key, status, html)
         if status == 404:
-            self._store(url, status, html)
-            raise NotFound(url)
+            self._store(key, status, html)
+            raise NotFound(key)
         if status == 429:
             wait = self._retry_after(response)
             self.limiter.penalize(wait)  # everyone backs off, not just this worker
-            raise RetryableFetchError(f"429 from {url}; backing off {wait:.0f}s")
+            raise RetryableFetchError(f"429 from {request_url}; backing off {wait:.0f}s")
         if 500 <= status < 600:
-            raise RetryableFetchError(f"{status} from {url}")
+            raise RetryableFetchError(f"{status} from {request_url}")
         if 300 <= status < 400:
-            # Not followed: a redirect could leave the site and skip the robots/limiter checks.
-            where = response.headers.get("location")
-            raise PermanentFetchError(f"unexpected redirect {status} to {where}", status=status)
-        raise PermanentFetchError(f"{status} from {url}", status=status)
+            return self._follow_redirect(response, request_url, key, kind, event_date, force, hops)
+        raise PermanentFetchError(f"{status} from {request_url}", status=status)
+
+    def _follow_redirect(
+        self,
+        response: httpx.Response,
+        request_url: str,
+        key: str,
+        kind: PageKind,
+        event_date: date | None,
+        force: bool,
+        hops: int,
+    ) -> Page:
+        status = response.status_code
+        location = response.headers.get("location")
+        log.info("redirect", extra={"status": status, "location": location, "hop": hops + 1})
+        if status not in REDIRECT_STATUSES or not location:
+            raise PermanentFetchError(f"unfollowable {status} from {request_url}", status=status)
+        if hops >= MAX_REDIRECTS:
+            raise PermanentFetchError(
+                f"too many redirects (more than {MAX_REDIRECTS}) from {request_url}", status=status
+            )
+        target = urljoin(request_url, location)  # Location may be relative
+        try:
+            self.source.canonical_url(target)  # raises if it is not this site
+        except ValueError as exc:
+            raise PermanentFetchError(
+                f"cross-host redirect from {request_url} to {target}", status=status
+            ) from exc
+
+        page = self._fetch(target, kind, event_date, force, hops + 1)
+        if page.url != key:
+            # File the answer under the URL that was asked for too, so asking again is a cache
+            # hit instead of another redirect round trip.
+            self.cache.put(key, page.status, page.html, page.fetched_at)
+        return page
 
     def _get(self, url: str) -> httpx.Response:
         name = self.source.name
@@ -172,7 +226,7 @@ class Fetcher:
                 url,
                 headers={"User-Agent": self.user_agent},
                 timeout=self._timeout_s,
-                follow_redirects=False,
+                follow_redirects=False,  # we follow hops ourselves, through the cache and limiter
             )
         except httpx.HTTPError as exc:  # timeouts, connection resets, DNS failures, ...
             FETCH_SECONDS.labels(name, "error").observe(time.perf_counter() - started)
