@@ -139,3 +139,20 @@ class FightPage(Parsed):
     # Suspicious values that don't stop parsing. Each is "kind:detail"; the ingestion job logs
     # them and counts them (see anomalies.py).
     anomalies: list[str] = []
+
+
+class FighterPage(Parsed):
+    """Bio facts only: the things that don't change with time.
+
+    The fighter page also shows career rates (SLpM, accuracy, ...) and a record. Those are
+    "as of today", so using them for a past fight would leak the future. They are deliberately
+    not fields here; a test pins the exact field list.
+    """
+
+    ufcstats_id: str
+    name: str
+    nickname: str | None
+    height_cm: float | None
+    reach_cm: float | None
+    stance: str | None
+    dob: date | None
