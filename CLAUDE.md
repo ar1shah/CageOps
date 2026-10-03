@@ -75,6 +75,7 @@ data/                      local-only raw data (gitignored)
 - `uv run ruff check . && uv run ruff format .` — lint + format
 - `scripts/download_seed.sh [--force]` — download seed data to `data/raw/` and write the sha256 manifest (needs `~/.kaggle/` credentials)
 - `uv run --package cageops-api uvicorn cageops_api.main:app --port 8000` — run the API locally
+- `uv run python scripts/minimize_fixture.py data/fixtures/ufcstats/*.html --out services/scraper/tests/fixtures/ufcstats` — shrink hand-saved ufcstats pages into committable fixtures (deletes only; full pages stay in gitignored `data/fixtures/`, D-017)
 
 ## DECISIONS.md entry format
 
