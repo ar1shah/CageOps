@@ -1,0 +1,26 @@
+[
+  {
+    "dataset": "jerzyszocik/ufc-fight-forecast-complete-gold-modeling-dataset",
+    "file": "full_data_silver_plus.parquet",
+    "license": "CC0-1.0",
+    "role": "fighters, events, fights, per-round stats (silver; the golden ufc_features.parquet is deliberately NOT downloaded, see D-006)"
+  },
+  {
+    "dataset": "mdabbert/ultimate-ufc-dataset",
+    "file": "ufc-master.csv",
+    "license": "CC-BY-4.0",
+    "role": "closing odds, betting-favorite baseline only (never model features)"
+  },
+  {
+    "dataset": "jerzyszocik/ufc-rankings-history",
+    "file": "UFC_rankings_history.csv",
+    "license": "CC0-1.0",
+    "role": "historical rankings"
+  },
+  {
+    "dataset": "martj42/ufc-rankings",
+    "file": "rankings_history.csv",
+    "license": "CC0-1.0",
+    "role": "historical rankings, second source: fills 2025-08 onward where jerzyszocik's snapshots are merged lists"
+  }
+]

@@ -15,6 +15,27 @@ concurrency:
 jobs:
   lint-and-test:
     runs-on: ubuntu-latest
+    # Real Postgres for the integration tests (D-012). Same image as docker-compose.yml.
+    # Throwaway container inside the job, so trust auth is fine and there is no password.
+    services:
+      postgres:
+        image: pgvector/pgvector:0.8.1-pg16
+        env:
+          POSTGRES_USER: cageops
+          POSTGRES_DB: cageops
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U cageops -d cageops"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://cageops@localhost:5432/cageops
+      REDIS_URL: redis://localhost:6379/0
+      # An unreachable database must fail the build, not silently skip the DB tests.
+      REQUIRE_DB: "1"
     steps:
       # Actions are pinned to commit SHAs (tag in the comment): tags can be moved, SHAs can't.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
