@@ -4,6 +4,8 @@
 - PermanentFetchError / NotFound: asking again gives the same answer. Don't retry.
 - SourceBlocked: the site is refusing automated clients. Stop everything, a human decides.
 - RobotsDisallowed / RobotsUnavailable: we may not (or can't tell if we may) crawl. Refuse to run.
+- ParseError: the page isn't the layout we expect, or holds a value we can't read. Fetching it
+  again returns the same page, so it is never retried; the job goes to the dead-letter queue.
 """
 
 
@@ -43,3 +45,12 @@ class RobotsDisallowed(FetchError):
 
 class RobotsUnavailable(FetchError):
     pass
+
+
+class ParseError(Exception):
+    """A page that parsers can't make sense of. Not a FetchError: the fetch worked."""
+
+    def __init__(self, message: str, url: str | None = None):
+        super().__init__(message if url is None else f"{message} ({url})")
+        self.message = message
+        self.url = url

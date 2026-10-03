@@ -56,6 +56,16 @@ class FakeSite:
 
 
 @pytest.fixture
+def fixture_html():
+    """Load a saved ufcstats page by name, e.g. fixture_html("fight_32054bf2b36b0e47")."""
+
+    def load(name: str) -> str:
+        return (FIXTURES / f"{name}.html").read_text(encoding="utf-8")
+
+    return load
+
+
+@pytest.fixture
 def clock() -> Clock:
     return Clock()
 
