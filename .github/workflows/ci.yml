@@ -31,11 +31,23 @@ jobs:
           --health-interval 5s
           --health-timeout 3s
           --health-retries 10
+      # Real Redis for the rate limiter and circuit breaker tests: their correctness depends on
+      # Redis running a script atomically. Same image tag as docker-compose.yml.
+      redis:
+        image: redis:7.4.6-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
     env:
       DATABASE_URL: postgresql://cageops@localhost:5432/cageops
       REDIS_URL: redis://localhost:6379/0
       # An unreachable database must fail the build, not silently skip the DB tests.
       REQUIRE_DB: "1"
+      REQUIRE_REDIS: "1"
     steps:
       # Actions are pinned to commit SHAs (tag in the comment): tags can be moved, SHAs can't.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
