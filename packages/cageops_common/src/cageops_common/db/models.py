@@ -232,6 +232,25 @@ class Ranking(Base):
     rank: Mapped[int] = mapped_column(SmallInteger)
 
 
+class RawPage(Base):
+    """The latest raw HTML we fetched for a URL, so a page is never fetched twice (D-015).
+
+    Only real answers are stored: 200 and 404. Server errors, 429s and bot-challenge pages are
+    never cached, because caching them would hide the real page behind a bad copy.
+    """
+
+    __tablename__ = "raw_pages"
+    __table_args__ = (CheckConstraint("status IN (200, 404)", name="raw_page_status_values"),)
+
+    url: Mapped[str] = mapped_column(Text, primary_key=True)
+    # Which Source fetched it, e.g. "ufcstats" or "ufcstats_replay". Lets us count or purge one
+    # source without touching another.
+    source: Mapped[str] = mapped_column(Text)
+    fetched_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    status: Mapped[int] = mapped_column(SmallInteger)
+    html: Mapped[str] = mapped_column(Text)
+
+
 class LoadRun(Base):
     """One loader run over one source file, tied to the file's sha256 from the manifest."""
 

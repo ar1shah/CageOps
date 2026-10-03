@@ -19,6 +19,7 @@ EXPECTED_TABLES = {
     "load_runs",
     "odds",
     "rankings",
+    "raw_pages",
 }
 
 
