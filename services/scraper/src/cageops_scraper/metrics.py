@@ -28,3 +28,8 @@ SOURCE_BLOCKED_TOTAL = Counter(
     "Times the source served a bot challenge or refused us (trips the circuit breaker)",
     ["source", "reason"],
 )
+PARSE_ANOMALY_TOTAL = Counter(
+    "scraper_parse_anomaly_total",
+    "Suspicious values found while parsing a page that did not stop the parse",
+    ["source", "kind"],  # kind: e.g. round_sig_strikes_sum_mismatch, unrecognized_time_format
+)

@@ -70,3 +70,72 @@ class EventPage(Parsed):
     state: str | None
     country: str | None
     bouts: list[EventBout]
+
+
+class FightFighter(Parsed):
+    ufcstats_id: str
+    name: str
+    # W win, L loss, D draw, NC no contest. Straight from the page's status badge.
+    result: Literal["W", "L", "D", "NC"]
+
+
+class FightStats(Parsed):
+    """One fighter's numbers for one scope: the whole fight (round is None) or a single round.
+
+    None means the page showed no value ("--"); 0 means the page published 0. The strike
+    breakdown (head ... ground) comes from a second table, so it can be None while the core
+    numbers are present.
+    """
+
+    fighter_id: str
+    round: int | None
+    knockdowns: int | None = None
+    sig_strikes_landed: int | None = None
+    sig_strikes_att: int | None = None
+    total_strikes_landed: int | None = None
+    total_strikes_att: int | None = None
+    takedowns_landed: int | None = None
+    takedowns_att: int | None = None
+    submission_att: int | None = None
+    reversals: int | None = None
+    ctrl_sec: int | None = None
+    head_landed: int | None = None
+    head_att: int | None = None
+    body_landed: int | None = None
+    body_att: int | None = None
+    leg_landed: int | None = None
+    leg_att: int | None = None
+    distance_landed: int | None = None
+    distance_att: int | None = None
+    clinch_landed: int | None = None
+    clinch_att: int | None = None
+    ground_landed: int | None = None
+    ground_att: int | None = None
+
+
+class FightPage(Parsed):
+    """A fight page. There is deliberately NO date field: fight pages don't carry one, and the
+    fight's date must come from its event page (point-in-time correctness).
+
+    `fighters` is in the page's order, which for the fight page is the card's order: the FIRST
+    fighter is the red corner (checked against the seed's red corner on every fixture).
+    """
+
+    fight_id: str
+    event_id: str
+    fighters: tuple[FightFighter, FightFighter]
+    bout_title_raw: str  # as printed: "Welterweight Bout", "UFC Heavyweight Title Bout"
+    is_title_fight: bool
+    method_raw: str  # "Decision - Unanimous", "KO/TKO", "Submission", "Could Not Continue", ...
+    details_raw: str | None  # judges' scores, the strike or submission name, ...
+    round: int | None
+    finish_time_sec: int | None  # seconds into the finishing round
+    time_format_raw: str | None  # "3 Rnd (5-5-5)"
+    scheduled_rounds: int | None
+    referee: str | None
+    has_round_stats: bool  # False when the page says round-by-round stats aren't available
+    totals: list[FightStats]  # whole-fight rows, one per fighter; empty when no stats
+    rounds: list[FightStats]  # per-round rows, one per fighter per round; empty when no stats
+    # Suspicious values that don't stop parsing. Each is "kind:detail"; the ingestion job logs
+    # them and counts them (see anomalies.py).
+    anomalies: list[str] = []
