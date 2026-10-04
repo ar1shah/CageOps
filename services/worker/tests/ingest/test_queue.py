@@ -47,7 +47,7 @@ def test_the_first_enqueue_wins_and_the_job_has_the_right_settings(queue, settin
     assert job.timeout == settings.ingest_job_timeout_s
     assert job.result_ttl == 0 and job.failure_ttl == -1
     assert job.retries_left == 5 and len(job.retry_intervals) == 5
-    assert job.meta == {"job_type": "fetch_fighter", "run_id": "run-1",
+    assert job.meta == {"job_type": "fetch_fighter", "run_id": "run-1", "max_retries": 5,
                         "url": "http://ufcstats.com/fighter-details/aaaa"}  # fmt: skip
 
 

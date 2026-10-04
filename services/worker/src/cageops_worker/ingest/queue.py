@@ -92,7 +92,12 @@ def enqueue_unique(
             job_timeout=settings.ingest_job_timeout_s,
             result_ttl=0,  # nothing reads a result; the job disappears when it succeeds
             failure_ttl=-1,  # a dead letter never expires on its own
-            meta={"job_type": func.rsplit(".", 1)[-1], "run_id": run_id, **(meta or {})},
+            meta={
+                "job_type": func.rsplit(".", 1)[-1],
+                "run_id": run_id,
+                "max_retries": settings.ingest_max_retries,
+                **(meta or {}),
+            },
         )
     except BaseException:
         release_claim(redis, job_id)  # don't leave a card on a table nobody is sitting at
