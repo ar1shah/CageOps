@@ -328,11 +328,14 @@ def fetch_fight(
     fight_url: str,
     event_ufcstats_id: str,
     event_date: str,
-    bout: dict[str, Any],
+    bout: dict[str, Any] | None,
     run_id: str,
     force: bool = False,
 ) -> dict[str, Any]:
     """Fetch a fight page and write the fight with its totals and per-round stats.
+
+    `bout` is the event page's row for this fight (it gives the plain division name and lets us
+    cross-check the result); None works too, e.g. for a manual replay, and falls back to the title.
 
     `event_date` only decides how long the cached page stays fresh; the fight table has no date
     column at all, and the fight's date is its event row's, written by fetch_event.
@@ -342,7 +345,7 @@ def fetch_fight(
         fight_url, PageKind.FIGHT, event_date=date.fromisoformat(event_date), force=force
     )
     page = parse_fight(fetched.html, fight_url)
-    mapped = map_fight(page, EventBout.model_validate(bout))
+    mapped = map_fight(page, EventBout.model_validate(bout) if bout else None)
     anomalies = list(mapped.anomalies)
     if page.event_id != event_ufcstats_id:
         anomalies.append(f"fight_event_mismatch:expected={event_ufcstats_id}:page={page.event_id}")
