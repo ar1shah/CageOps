@@ -90,9 +90,24 @@ class Fight(Base):
             "red_fighter_id IS NULL OR red_fighter_id IN (fighter_a_id, fighter_b_id)",
             name="red_is_a_participant",
         ),
-        CheckConstraint("(outcome = 'win') = (winner_id IS NOT NULL)", name="win_has_winner"),
+        # NULL-safe: a plain `outcome = 'win'` is NULL for an unfought bout, and a CHECK that
+        # evaluates to NULL passes, which would let a winner onto a scheduled row.
+        CheckConstraint(
+            "(outcome IS NOT DISTINCT FROM 'win') = (winner_id IS NOT NULL)", name="win_has_winner"
+        ),
         CheckConstraint(
             "outcome IN ('win', 'draw', 'no_contest', 'unknown')", name="outcome_values"
+        ),
+        CheckConstraint("status IN ('scheduled', 'completed', 'cancelled')", name="status_values"),
+        CheckConstraint(
+            "status <> 'completed' OR "
+            "(outcome IS NOT NULL AND method IS NOT NULL AND is_title_fight IS NOT NULL)",
+            name="completed_has_result",
+        ),
+        CheckConstraint(
+            "status = 'completed' OR "
+            "(outcome IS NULL AND method IS NULL AND winner_id IS NULL AND NOT has_round_stats)",
+            name="unfought_has_no_result",
         ),
         CheckConstraint(
             "method IN ('decision', 'ko_tko', 'submission', 'dq', 'other')", name="method_values"
@@ -116,11 +131,16 @@ class Fight(Base):
     # NULL when the source says unknown (a few early fights and one 2025 row).
     weight_class: Mapped[str | None] = mapped_column(Text)
     gender: Mapped[str] = mapped_column(String(1))
-    is_title_fight: Mapped[bool] = mapped_column(Boolean)
+    # scheduled | completed | cancelled (D-023). A bout with no result yet (or one that was removed
+    # from its card) has NULL outcome, method and is_title_fight. 'unknown' outcome only ever
+    # means "a completed fight whose result the seed couldn't determine".
+    status: Mapped[str] = mapped_column(Text, server_default="completed")
+    # NULL for a scheduled bout: the event page doesn't say, and we never fake a False.
+    is_title_fight: Mapped[bool | None] = mapped_column(Boolean)
     scheduled_rounds: Mapped[int | None] = mapped_column(SmallInteger)
-    outcome: Mapped[str] = mapped_column(Text)
+    outcome: Mapped[str | None] = mapped_column(Text)
     winner_id: Mapped[int | None] = mapped_column(ForeignKey("fighters.id"))
-    method: Mapped[str] = mapped_column(Text)
+    method: Mapped[str | None] = mapped_column(Text)
     decision_type: Mapped[str | None] = mapped_column(Text)
     method_detail: Mapped[str | None] = mapped_column(Text)
     finish_round: Mapped[int | None] = mapped_column(SmallInteger)
