@@ -45,6 +45,21 @@ class IngestSettings(BaseSettings):
     # Per-run row counts (inserted / updated / unchanged) live in Redis this long.
     ingest_run_stats_ttl_s: int = 7 * 24 * 3600
 
+    # The worker's HTTP port: /healthz and /metrics. Containers set the host to 0.0.0.0.
+    worker_http_host: str = "127.0.0.1"
+    worker_metrics_port: int = 9100  # 0 turns the server off
+    # /healthz goes 503 when the worker's loop hasn't ticked for job timeout + this margin (D-024).
+    worker_health_margin_s: int = 60
+    # While the site is blocking us (circuit breaker open) a worker checks again this often.
+    worker_hold_poll_s: float = 30.0
+    # How often the background thread re-reads Redis and Postgres for the /healthz body and gauges.
+    worker_snapshot_interval_s: float = 10.0
+    worker_probe_timeout_s: float = 2.0
+
+    @property
+    def worker_max_pulse_age_s(self) -> float:
+        return self.ingest_job_timeout_s + self.worker_health_margin_s
+
 
 @lru_cache
 def get_ingest_settings() -> IngestSettings:
