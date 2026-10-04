@@ -2,7 +2,7 @@ import threading
 
 import httpx
 import pytest
-from standin_site import DEFAULT_FIXTURES, make_server
+from standin_site import DEFAULT_FIXTURES, REAL_HOST, make_server
 
 BURNS_EVENT = "c3ac8d0da7b05772"
 UPCOMING_EVENT = "7f98d9d5a10fa25c"
@@ -45,7 +45,8 @@ def test_robots_allows_everything(site):
 )
 def test_every_fixture_is_served_at_the_real_sites_path(site, path, fixture):
     base, _ = site
-    expected = (DEFAULT_FIXTURES / f"{fixture}.html").read_text(encoding="utf-8")
+    saved = (DEFAULT_FIXTURES / f"{fixture}.html").read_text(encoding="utf-8")
+    expected = REAL_HOST.sub(base, saved)  # only the links differ
 
     response = get(base, path)
 
@@ -105,3 +106,12 @@ def test_an_unknown_mode_is_rejected(site):
     response = httpx.post(base + "/__mode/explode")
 
     assert response.status_code == 404
+
+
+def test_links_inside_pages_point_back_at_the_stand_in_not_the_real_site(site):
+    base, _ = site
+
+    page = get(base, f"/event-details/{BURNS_EVENT}").text
+
+    assert f"{base}/fight-details/" in page
+    assert "ufcstats.com" not in page

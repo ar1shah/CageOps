@@ -6,7 +6,8 @@ For trying the ingestion pipeline end to end without sending a single request to
     uv run python scripts/standin_site.py [--port 8099] [--fixtures DIR]
 
 Pages are served at the real site's URL paths (/event-details/<id>, /fight-details/<id>, ...) so
-the scraper can't tell the difference. Anything we have no fixture for is a 404, like a page that
+the scraper can't tell the difference (links inside the pages are rewritten to point back here).
+Anything we have no fixture for is a 404, like a page that
 doesn't exist. Switch behaviour while it runs:
 
     curl -X POST localhost:8099/__mode/ok          pages as saved (the default)
@@ -34,6 +35,7 @@ DEFAULT_FIXTURES = Path(__file__).parents[1] / "services/scraper/tests/fixtures/
 ROBOTS = "User-agent: *\nAllow: /\n"
 MODES = ("ok", "fail", "challenge")
 CHALLENGE_FILE = "challenge_2026-10-03.html"
+REAL_HOST = re.compile(r"https?://(?:www\.)?ufcstats\.com")
 
 
 def empty_list(html: str) -> str:
@@ -77,6 +79,7 @@ class StandIn:
     def __init__(self, fixtures: Path = DEFAULT_FIXTURES):
         self.pages = load_pages(fixtures)
         self.challenge = (fixtures / CHALLENGE_FILE).read_text(encoding="utf-8")
+        self.base_url = ""  # set once the port is known (make_server)
         self.mode = "ok"
         self.requests = 0
         self.lock = threading.Lock()
@@ -92,8 +95,13 @@ class StandIn:
         if mode == "challenge":
             return 200, self.challenge
         if path in self.pages:
-            return 200, self.pages[path]
+            return 200, self.relink(self.pages[path])
         return 404, "Not Found"
+
+    def relink(self, html: str) -> str:
+        """The saved pages link to http://ufcstats.com/...; point those links at this server.
+        (The scraper rightly refuses a link to a different host than the source it is reading.)"""
+        return REAL_HOST.sub(self.base_url, html) if self.base_url else html
 
 
 def make_handler(site: StandIn) -> type[BaseHTTPRequestHandler]:
@@ -144,6 +152,7 @@ def make_server(
     site = StandIn(fixtures)
     server = ThreadingHTTPServer(("127.0.0.1", port), make_handler(site))
     server.daemon_threads = True
+    site.base_url = f"http://127.0.0.1:{server.server_address[1]}"
     return server, site
 
 

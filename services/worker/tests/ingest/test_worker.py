@@ -6,6 +6,7 @@ from datetime import date
 import pytest
 from prometheus_client import REGISTRY
 from redis.exceptions import ConnectionError as RedisConnectionError
+from rq import SimpleWorker
 from sqlalchemy import text
 
 from cageops_worker.ingest.health import Heartbeat, WorkerStatus, health_response
@@ -209,6 +210,20 @@ def test_a_breaker_that_trips_mid_run_stops_further_dequeues(ctx, status, fake_t
     letters = dead_letters()
     assert len(letters) == 1  # only the in-flight job, and it can be replayed after a reset
     assert next(iter(letters.values())).meta["reason"] == "source_blocked"
+
+
+def test_our_threads_start_only_after_rq_has_forked_its_scheduler(
+    ctx, status, fake_time, monkeypatch
+):
+    order = []
+    monkeypatch.setattr(
+        SimpleWorker, "_start_scheduler", lambda self, *a, **k: order.append("scheduler")
+    )
+    worker = make_worker(ctx, status, fake_time, after_scheduler=lambda: order.append("threads"))
+
+    worker.work(burst=True, with_scheduler=True)
+
+    assert order == ["scheduler", "threads"]
 
 
 # -- run_worker: the start-up sequence and exit codes -----------------------------------------

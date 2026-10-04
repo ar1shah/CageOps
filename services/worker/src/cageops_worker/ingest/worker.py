@@ -81,9 +81,17 @@ class IngestWorker(SimpleWorker):
         self._sleep = sleep
         self._cleared = False  # has the gate passed since the last time we were held?
 
+    @property
+    def stopping(self) -> bool:
+        """Has a shutdown (SIGTERM / SIGINT) been requested? RQ records it in `_stop_requested`
+        only if a job was running; an idle worker gets a StopRequested exception instead, and only
+        `_shutdown_requested_date` shows it."""
+        return self._stop_requested or self._shutdown_requested_date is not None
+
     def _start_scheduler(self, *args: Any, **kwargs: Any) -> None:
-        # RQ forks the scheduler here. Our HTTP and observer threads start only afterwards, so the
-        # fork never happens in a multi-threaded process (which can deadlock the child).
+        # RQ forks its scheduler here. Our own threads (HTTP, observer) start only afterwards, so
+        # the child never inherits them. (RQ's own pub/sub thread already exists at this point, so
+        # Python still prints its "fork in a multi-threaded process" warning; that is RQ's design.)
         super()._start_scheduler(*args, **kwargs)
         if self._after_scheduler is not None:
             self._after_scheduler()
@@ -125,7 +133,7 @@ class IngestWorker(SimpleWorker):
                 return False
             waited = 0.0
             while waited < self.hold_poll_s:
-                if self._stop_requested:
+                if self.stopping:
                     return False
                 self.status.heartbeat.beat()
                 step = min(1.0, self.hold_poll_s - waited)
@@ -203,7 +211,7 @@ def _work_loop(
             return EXIT_REFUSED
         # work() also returns on a stop request, and after a burst or max_jobs. Only an unplanned
         # return (a Redis timeout, an RQ error) means "build a new worker and carry on".
-        if burst or max_jobs is not None or worker._stop_requested:
+        if burst or max_jobs is not None or worker.stopping:
             return EXIT_OK
         log.error("worker loop ended unexpectedly; starting a new worker")
         status.heartbeat.beat()
