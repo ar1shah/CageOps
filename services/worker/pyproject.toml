@@ -5,9 +5,14 @@ description = "RQ workers for ingestion and embedding jobs"
 requires-python = ">=3.12"
 dependencies = [
     "cageops-common",
+    "cageops-scraper",
     "pyarrow>=25.0.1",
+    "rq>=2.12.0",
 ]
 
 [build-system]
 requires = ["uv_build>=0.12,<0.13"]
 build-backend = "uv_build"
+
+[tool.uv.sources]
+cageops-scraper = { workspace = true }
