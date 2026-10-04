@@ -79,6 +79,7 @@ class FakeSite:
         self.pages: dict[str, tuple[int, str]] = {}
         self.requests: list[str] = []
         self.delay = 0.0  # seconds a response takes (to test job timeouts)
+        self.flaky: dict[str, int] = {}  # path -> how many 503s to serve before the real page
 
     def add(self, path: str, body: str, status: int = 200) -> None:
         self.pages[f"{BASE}{path}"] = (status, body)
@@ -91,6 +92,10 @@ class FakeSite:
         self.requests.append(url)
         if self.delay:
             time.sleep(self.delay)
+        path = url.removeprefix(BASE)
+        if self.flaky.get(path, 0) > 0:
+            self.flaky[path] -= 1
+            return httpx.Response(503, text="unavailable")
         status, body = self.pages.get(url, NOT_FOUND)
         return httpx.Response(status, text=body)
 

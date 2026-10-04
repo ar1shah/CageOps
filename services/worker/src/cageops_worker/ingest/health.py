@@ -100,6 +100,7 @@ class HealthServer:
         handler = _handler(status, observer, registry)
         self._server = ThreadingHTTPServer((host, port), handler)
         self._server.daemon_threads = True
+        self._started = False
         self._thread = threading.Thread(
             target=self._server.serve_forever,
             kwargs={"poll_interval": 0.05},
@@ -112,11 +113,13 @@ class HealthServer:
         return self._server.server_address[1]
 
     def start(self) -> None:
+        self._started = True
         self._thread.start()
         log.info("worker http server listening", extra={"port": self.port})
 
     def stop(self) -> None:
-        self._server.shutdown()
+        if self._started:  # shutdown() would wait forever for a loop that never ran
+            self._server.shutdown()
         self._server.server_close()
 
 
