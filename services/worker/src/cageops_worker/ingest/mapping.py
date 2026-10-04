@@ -145,6 +145,7 @@ def map_fight(page: FightPage, bout: EventBout | None = None) -> MappedFight:
         "status": "completed",
         "weight_class": weight_class,
         "gender": gender,
+        "gender_guessed": guessed,  # the store won't let a guess overwrite a known gender
         "is_title_fight": page.is_title_fight,
         "scheduled_rounds": page.scheduled_rounds,
         "outcome": outcome,
@@ -231,6 +232,7 @@ def map_scheduled_bout(bout: EventBout, event_ufcstats_id: str) -> MappedSchedul
         "status": "scheduled",
         "weight_class": weight_class,
         "gender": gender,
+        "gender_guessed": guessed,
         "is_title_fight": None,
         "scheduled_rounds": None,
         "outcome": None,

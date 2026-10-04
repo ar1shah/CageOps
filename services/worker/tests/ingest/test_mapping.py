@@ -311,6 +311,7 @@ def test_a_scheduled_bout_has_no_result_and_unknown_title_and_rounds(upcoming_ca
         "status": "scheduled",
         "weight_class": "Middleweight",
         "gender": "M",
+        "gender_guessed": False,
         "is_title_fight": None,  # unknown, not False
         "scheduled_rounds": None,
         "outcome": None,
