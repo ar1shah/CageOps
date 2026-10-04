@@ -217,6 +217,7 @@ Phase 5: close the loop.
 - [ ] Predictions for at least one real event were stored beforehand and graded after
 - [ ] Promotion gate tested both ways (promote and reject)
 - [ ] /model page shows real data
+- [ ] Weekly forced refresh is scheduled and has run at least once: `backfill --since <today - 6 months> --force` (about 300 requests, about 5 minutes at 1 request/second). Without it, results overturned after the 3-day cache window (win to no contest) stay wrong in `fights`, and Phase 5 would grade against the old result. Grading must re-grade a prediction when a `result_changed` anomaly fires. See the D-015 amendment (2026-10-03) in DECISIONS.md.
 
 ---
 
