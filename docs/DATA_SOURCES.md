@@ -333,10 +333,12 @@ Read from the hand-saved fixtures in `services/scraper/tests/fixtures/ufcstats/`
 | Fight page (`/fight-details/<id>`) | W/L/D/NC badge per fighter, bout title, method in full (`Decision - Unanimous`), round, time, time format, referee, details (judges' scores, strike or submission name), totals, per-round totals, significant-strike breakdown (head/body/leg, distance/clinch/ground), overall and per round | **first fighter = red corner** (matches the seed's red corner in 6 of 6 fixtures); **no date on the page**; **per-round tables put `<thead>` rows ("Round 1") inside `<tbody>`**; the per-round header says "Td %" twice (a typo; read columns by position); `---` appears for a percentage with zero attempts, while `0 of 0` is a real zero; a 1998 fight has no tables, only "Round-by-round stats not currently available."; the bout title carries the title fight ("UFC Heavyweight Title Bout") and a trailing "Bout" the seed's weight-class table doesn't have; the "Details" text can be junk (`to`) |
 | Fighter page (`/fighter-details/<id>`) | name, nickname, height `5' 10"`, reach `71"`, stance, DOB `Jul 20, 1986` | **career rates (SLpM, accuracy, ...) and the record are on the same list, "as of today", and are never read** (rule 1); a missing value is `--` (an empty stance is just blank); heights and reach convert to exactly the seed's centimetres (Burns 177.8 / 180.34) |
 
-Differences between these pages and the seed, found while writing the parsers (to be handled, and tested against a real database, in checkpoint 3):
-- Marwan Rahiki: the seed has reach and DOB NULL; the site now publishes 72" and May 10, 2002 (filled in after our seed).
-- Vologdin vs Castaneda: seed `outcome='unknown'`; the page says draw (majority decision).
-- Santos vs Marscucci (1998): seed `finish_time_sec = 27`; the page says 10:27 (627 s, "1 Rnd + OT (12-3)"). Probably a seed bug.
+Differences between these pages and the seed, now verified by the seed-vs-scrape test (`services/worker/tests/ingest/test_seed_match.py`, D-019): for the six fixture fights, their events, fighters and 32 stat rows, every column matches except these six values (the page wins in each case):
+- Vologdin vs Castaneda: seed `outcome = 'unknown'` (silver's winner matched neither fighter), page says draw (majority decision).
+- Santos vs Marscucci (1998): seed `finish_time_sec = 27`, page says 10:27 (627 s, "1 Rnd + OT (12-3)"). Probably a seed parse of "0:27".
+- Marwan Rahiki: the seed has no height, reach, DOB or stance; the site now publishes 5' 8", 72", May 10, 2002 and Orthodox.
+
+Upcoming bouts (an event page with no results yet) carry the fighters and weight class only: no title flag, round format, corner or result. They are stored as `scheduled` bouts with those fields NULL (D-023).
 
 ## Open items before Phase 1
 
