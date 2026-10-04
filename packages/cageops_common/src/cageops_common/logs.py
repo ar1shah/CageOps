@@ -15,7 +15,7 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from contextvars import ContextVar
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, TextIO
 
 # Always present on every line (null outside a job), so log queries never need "if exists".
 ALWAYS = ("job_id", "url")
@@ -52,9 +52,10 @@ class JsonFormatter(logging.Formatter):
         return json.dumps(line, default=str)
 
 
-def configure_logging(level: str = "INFO") -> None:
-    """Send every logger's output to stdout as JSON lines (containers collect stdout)."""
-    handler = logging.StreamHandler(sys.stdout)
+def configure_logging(level: str = "INFO", stream: TextIO | None = None) -> None:
+    """Send every logger's output to `stream` (default stdout) as JSON lines. Containers collect
+    stdout; a command-line tool passes stderr so its own output on stdout stays clean."""
+    handler = logging.StreamHandler(stream or sys.stdout)
     handler.setFormatter(JsonFormatter())
     root = logging.getLogger()
     root.handlers[:] = [handler]
