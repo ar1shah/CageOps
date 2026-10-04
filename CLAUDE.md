@@ -77,6 +77,13 @@ data/                      local-only raw data (gitignored)
 - `uv run --package cageops-api uvicorn cageops_api.main:app --port 8000` — run the API locally
 - `uv run python scripts/minimize_fixture.py data/fixtures/ufcstats/*.html --out services/scraper/tests/fixtures/ufcstats` — shrink hand-saved ufcstats pages into committable fixtures (deletes only; full pages stay in gitignored `data/fixtures/`, D-017)
 - `uv run python -m cageops_scraper.parsers services/scraper/tests/fixtures/ufcstats/fight_32054bf2b36b0e47.html` — print what a parser makes of a saved page, as JSON (file only, no network; kind and URL come from the file name)
+- `uv run python -m cageops_worker.ingest backfill --since YYYY-MM-DD [--force]` — queue every completed event since a date (or `--months N`); prints a run id. `--force` re-fetches cached pages. Refuses (exit 3) while the circuit breaker is open
+- `uv run python -m cageops_worker.ingest scrape-upcoming [--force]` — queue a read of the upcoming events
+- `uv run python -m cageops_worker.ingest worker [--burst] [--max-jobs N] [--metrics-port P]` — run one ingestion worker (Linux/macOS/WSL2; serves `/healthz` and `/metrics` on 9100; holds, never exits, while the site blocks us)
+- `uv run python -m cageops_worker.ingest status [--run RUN_ID] [--json]` — queue depth, dead letters, breaker; with `--run`, rows inserted/updated/unchanged
+- `uv run python -m cageops_worker.ingest dlq list [--reason R] | inspect <job_id> | replay <job_id> | replay --all [--reason R] | purge <job_id>` — the dead-letter queue
+- `uv run python -m cageops_worker.ingest breaker status | reset --yes` — see or clear the circuit breaker (check the site yourself first)
+- `uv run python scripts/standin_site.py` — a local stand-in for ufcstats.com that serves the saved fixtures (modes: ok / fail / challenge) for trying ingestion with no real traffic; walkthrough in `docs/RUNBOOK.md`
 
 ## DECISIONS.md entry format
 
