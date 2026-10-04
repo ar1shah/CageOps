@@ -2,6 +2,7 @@
 ufcstats serving them, and a fully wired ingestion context on real Postgres and Redis."""
 
 import re
+import time
 from datetime import UTC, date, datetime
 from pathlib import Path
 
@@ -77,6 +78,7 @@ class FakeSite:
     def __init__(self):
         self.pages: dict[str, tuple[int, str]] = {}
         self.requests: list[str] = []
+        self.delay = 0.0  # seconds a response takes (to test job timeouts)
 
     def add(self, path: str, body: str, status: int = 200) -> None:
         self.pages[f"{BASE}{path}"] = (status, body)
@@ -87,6 +89,8 @@ class FakeSite:
     def __call__(self, request: httpx.Request) -> httpx.Response:
         url = str(request.url)
         self.requests.append(url)
+        if self.delay:
+            time.sleep(self.delay)
         status, body = self.pages.get(url, NOT_FOUND)
         return httpx.Response(status, text=body)
 
