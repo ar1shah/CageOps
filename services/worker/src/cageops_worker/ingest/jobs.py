@@ -278,6 +278,8 @@ def fetch_event(
 
     with ctx.engine.begin() as conn:
         event_counts, event_db_id = store.write_event(conn, map_event(event))
+        # name-only fighter rows for the card, counted here (write_scheduled_bouts would find them)
+        stub_counts, _ = store.ensure_fighters(conn, [f for s in scheduled for f in s.fighters])
         scheduled_counts = store.write_scheduled_bouts(conn, event.ufcstats_id, scheduled)
         reconciled = store.reconcile_event_bouts(
             conn, event_db_id, [b.fight_id for b in event.bouts]
@@ -286,6 +288,7 @@ def fetch_event(
     report_anomalies(ctx.source.name, anomalies)
     _record(ctx, run_id, "events", event_counts)
     _record(ctx, run_id, "fights_scheduled", scheduled_counts)
+    _record(ctx, run_id, "fighters", stub_counts)
 
     for bout in played:  # only fights with a result have a stats page worth fetching
         _enqueue(
@@ -354,6 +357,9 @@ def fetch_fight(
     anomalies += written.anomalies
     report_anomalies(ctx.source.name, anomalies)
     _record(ctx, run_id, "fights", written.fight)
+    _record(
+        ctx, run_id, "fighters", written.fighters
+    )  # name-only rows; bios come from fighter jobs
     _record(ctx, run_id, "fight_totals", written.totals)
     _record(ctx, run_id, "fight_round_stats", written.rounds)
     return {

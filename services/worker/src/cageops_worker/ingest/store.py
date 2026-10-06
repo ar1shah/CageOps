@@ -211,6 +211,8 @@ class FightWriteResult:
     stale_stat_rows_deleted: int = 0
     previous_status: str | None = None  # None if the fight was new
     anomalies: list[str] = field(default_factory=list)
+    # fighter rows this fight had to create (a name only; the fighter job adds the bio later)
+    fighters: UpsertCounts = field(default_factory=UpsertCounts)
 
 
 def write_completed_fight(conn: Connection, mapped: MappedFight) -> FightWriteResult:
@@ -225,7 +227,7 @@ def write_completed_fight(conn: Connection, mapped: MappedFight) -> FightWriteRe
             f"event {fight['event_ufcstats_id']} is not in the database yet; "
             f"fight {fight['ufcstats_id']} takes its date from the event page"
         )
-    _, ids = ensure_fighters(conn, mapped.fighters)
+    stub_counts, ids = ensure_fighters(conn, mapped.fighters)
     row = _fight_row(fight, event_db_id, ids)
     previous = conn.execute(
         sa.select(FIGHTS.c.status, FIGHTS.c.gender, *(FIGHTS.c[c] for c in RESULT_COLUMNS)).where(
@@ -275,6 +277,7 @@ def write_completed_fight(conn: Connection, mapped: MappedFight) -> FightWriteRe
         stale_stat_rows_deleted=deleted,
         previous_status=None if previous is None else previous.status,
         anomalies=anomalies,
+        fighters=stub_counts,
     )
 
 
