@@ -33,7 +33,7 @@ from cageops_worker.ingest.mapping_wikipedia import (
 )
 from cageops_worker.ingest.store import RESULT_COLUMNS
 from cageops_worker.ingest.upsert import UpsertCounts, upsert
-from cageops_worker.seed.resolver import NameResolver
+from cageops_worker.seed.resolver import ALIASES_CSV, NameResolver, load_aliases
 
 log = logging.getLogger(__name__)
 FIGHTS = Fight.__table__
@@ -247,6 +247,9 @@ def write_wikipedia_event(
     """All of one article's bouts, in the caller's transaction. Raises MappingError (writing
     nothing that survives the rollback) when a name needs a person's review."""
     result = WikiWriteResult()
+    # The reviewed alias file is the way a person resolves a held name: edit it, then replay. Only
+    # this source's rows are loaded, so an edit made for another source can't stop this job.
+    load_aliases(conn, ALIASES_CSV, sources=("wikipedia",))
     names = dict(conn.execute(text("SELECT id, name FROM fighters")).all())
     resolver = NameResolver.from_db(conn)
     index, distinct = DuplicateIndex(names), load_distinct_titles()

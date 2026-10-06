@@ -517,3 +517,46 @@ def test_the_upsert_itself_refuses_to_touch_a_ufcstats_result_or_a_cancelled_bou
 
         assert counts == UpsertCounts(unchanged=1)
         assert one(db, "SELECT * FROM fights WHERE id = :i", i=fight_id) == before
+
+
+def test_an_alias_row_in_the_csv_resolves_a_held_name_without_a_seed_rerun(
+    db, wiki_page, tmp_path, monkeypatch
+):
+    """The workflow the error message promises: edit the alias file, then replay."""
+    page = wiki_page("UFC_323")
+    with db.begin() as conn:
+        conn.execute(
+            text(
+                "INSERT INTO fighters (ufcstats_id, name)"
+                " VALUES ('c000000000000001', 'Piotr Yanov')"
+            )
+        )
+    csv = tmp_path / "aliases.csv"
+    csv.write_text(
+        "source,alias,ufcstats_id,note\n"
+        "wikipedia,Petr Yan,c000000000000001,reviewed\n"
+        "mdabbert,Someone Else,ffffffffffffffff,another source: unknown here, must not matter\n"
+    )
+    monkeypatch.setattr("cageops_worker.ingest.store_wikipedia.ALIASES_CSV", csv)
+
+    write(db, page, page.bouts[:1])
+
+    assert count(db, "fighters WHERE name = 'Petr Yan'") == 0  # resolved to Piotr Yanov
+    assert (
+        one(db, "SELECT wikipedia_title FROM fighters WHERE ufcstats_id = 'c000000000000001'")[
+            "wikipedia_title"
+        ]
+        == "Petr_Yan"
+    )
+
+
+def test_an_alias_row_for_wikipedia_that_points_nowhere_is_a_loud_error(
+    db, wiki_page, tmp_path, monkeypatch
+):
+    csv = tmp_path / "aliases.csv"
+    csv.write_text("source,alias,ufcstats_id,note\nwikipedia,Petr Yan,ffffffffffffffff,typo\n")
+    monkeypatch.setattr("cageops_worker.ingest.store_wikipedia.ALIASES_CSV", csv)
+    page = wiki_page("UFC_323")
+
+    with pytest.raises(ValueError, match="points at unknown fighter"):
+        write(db, page, page.bouts[:1])
