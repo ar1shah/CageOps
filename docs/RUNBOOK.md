@@ -221,6 +221,28 @@ uv run python scripts/bench_ingest.py matrix --only B,D
 - The rate-limit interval under 1000 ms is accepted only for the replay source; the harness and `ScraperSettings` both refuse it for the real site, and the replay URL must be on this machine.
 - Logs of every process of a run are in `data/bench/logs/`.
 
+## Features
+
+The `fight_features` table holds, for every fight and each of its two fighters, what was known **before** that fight (D-027). It is derived, so it can be rebuilt from `fights`, `events`, `fighters` and `fight_totals` at any time. Needs `docker compose up -d` and a migrated, seeded database.
+
+```bash
+uv run python -m cageops_worker.features rebuild
+uv run python -m cageops_worker.features rebuild --today 2026-10-06
+```
+
+- `rebuild` recomputes every row in one transaction and prints a JSON report: row counts, `history_through` (the latest completed event we hold), how many completed fights have no trusted length (by reason), any past-dated `scheduled` fights it left out, and `output_sha256` (the same data always gives the same hash). If a check fails (every fight must produce exactly 2 rows) it exits 1, prints the report on stderr and leaves the old table untouched. A failed run leaves no `load_runs` row, same as the seed loaders.
+- `--today` pins what "upcoming" means (scheduled fights dated before it are left out); the default is the real date.
+- Rebuild after any seed load or ingestion run, and after a result is overturned (a rebuild picks up the corrected result).
+
+Look at one fighter's rows, oldest first (name matching ignores case and accents; an ambiguous name lists the candidates and exits 2):
+
+```bash
+uv run python -m cageops_worker.features show --fighter "Israel Adesanya"
+uv run python -m cageops_worker.features show --fighter-id 1234 --json
+```
+
+Spot-check against what you know: the first row should say 0 prior fights, and `win_streak` should reset to 0 right after a loss.
+
 ## Production
 
 _Written in Phase 2c (VM + docker compose) and rewritten in Phase 6 (k3s)._
