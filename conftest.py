@@ -3,10 +3,13 @@
 Integration tests use real Postgres (not SQLite) because we rely on ON CONFLICT, CHECK
 constraints and CREATE EXTENSION. Locally the tests skip with a clear reason if Postgres
 isn't reachable. In CI set REQUIRE_DB=1 so an unreachable database fails instead of skipping.
+The same goes for Redis (the rate limiter and circuit breaker are tested against real Redis,
+because their correctness depends on Redis running a script atomically): REQUIRE_REDIS=1.
 """
 
 import os
 from pathlib import Path
+from urllib.parse import urlsplit
 
 import pytest
 from alembic import command
@@ -59,6 +62,38 @@ def engine() -> Engine:
         command.upgrade(cfg, "head")
     yield test_engine
     test_engine.dispose()
+
+
+TEST_REDIS_DB = 15  # dev data lives in db 0; tests only ever touch (and wipe) db 15
+
+
+@pytest.fixture
+def redis_client():
+    """A Redis client on a scratch database that is emptied before every test.
+
+    Skips if Redis isn't reachable; with REQUIRE_REDIS=1 (CI) that is a failure instead.
+    Decoded responses are off on purpose: RQ needs bytes, so our code must work with bytes.
+    """
+    import redis
+    from redis.exceptions import ConnectionError as RedisConnectionError
+
+    try:
+        base_url = os.environ.get("REDIS_URL") or get_settings().redis_url
+    except ValidationError:
+        base_url = "redis://localhost:6379/0"
+    url = urlsplit(base_url)._replace(path=f"/{TEST_REDIS_DB}").geturl()
+    client = redis.Redis.from_url(url)
+    try:
+        client.flushdb()
+    except RedisConnectionError as exc:
+        client.close()
+        reason = f"cannot reach Redis: {exc}"
+        if os.environ.get("REQUIRE_REDIS") == "1":
+            pytest.fail(f"REQUIRE_REDIS=1 but Redis is unavailable: {reason}")
+        pytest.skip(reason)
+    yield client
+    client.flushdb()
+    client.close()
 
 
 @pytest.fixture

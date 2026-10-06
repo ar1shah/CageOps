@@ -23,7 +23,9 @@ ufcstats.com is the public stats site built on FightMetric data. FightMetric bec
 
 Pages are served over plain HTTP with 16-character hex IDs, e.g. `http://ufcstats.com/fighter-details/032cc3922d871c7f` ([example fighter page](http://ufcstats.com/fighter-details/032cc3922d871c7f)).
 
-### 1.2 robots.txt **[UNVERIFIED]**
+### 1.2 robots.txt (verified 2026-10-01 and 2026-10-03)
+
+**Update 2026-10-03:** `http://ufcstats.com/robots.txt` returns `404 Not Found` (checked 2026-10-01 and again 2026-10-03), so there are no crawl rules and no Crawl-delay. But every content page (homepage, events list, fight pages) now returns a "Checking your browser" proof-of-work challenge instead of content, so the footer couldn't be read either. We don't bypass it; see D-013. The original audit notes follow.
 
 I could not retrieve `ufcstats.com/robots.txt` during this audit: both the `http://` and `https://` fetches failed at the connection level from my research environment, so **I cannot tell you its current contents**. I did not try to work around that.
 
@@ -320,10 +322,29 @@ different input, not a code change. The loader refuses to run if a file doesn't 
 
 ---
 
+## ufcstats page structure (verified 2026-10-03)
+
+Read from the hand-saved fixtures in `services/scraper/tests/fixtures/ufcstats/` (minimized, D-017) and checked against the Phase 1a seed. This is what the Phase 1b parsers (D-018) are built on. Details that surprised us are in bold.
+
+| Page | Gives | Quirks |
+|---|---|---|
+| Events list (`/statistics/events/completed`, `/upcoming`) | one row per event: id (in the link), name, date, location | **the first row of the completed list is the next upcoming event** (a `next.png` icon; flagged by the parser, not treated as completed); 25 rows per page with pagination links; `?page=all` is used by other scrapers but was not verified here |
+| Event page (`/event-details/<id>`) | name, date, location, one row per bout: fight id, both fighters, W/L flag (`win`, `draw`, `nc`), weight class, method **abbreviated** (`U-DEC`, `S-DEC`, `M-DEC`, `KO/TKO`, `SUB`), round, time | **the winner is listed first** (Malott above Burns on a card billed "Burns vs. Malott"), so row order carries the outcome; for a draw the order is the card's; an upcoming event has the same rows with everything but the fighters and weight class blank |
+| Fight page (`/fight-details/<id>`) | W/L/D/NC badge per fighter, bout title, method in full (`Decision - Unanimous`), round, time, time format, referee, details (judges' scores, strike or submission name), totals, per-round totals, significant-strike breakdown (head/body/leg, distance/clinch/ground), overall and per round | **first fighter = red corner** (matches the seed's red corner in 6 of 6 fixtures); **no date on the page**; **per-round tables put `<thead>` rows ("Round 1") inside `<tbody>`**; the per-round header says "Td %" twice (a typo; read columns by position); `---` appears for a percentage with zero attempts, while `0 of 0` is a real zero; a 1998 fight has no tables, only "Round-by-round stats not currently available."; the bout title carries the title fight ("UFC Heavyweight Title Bout") and a trailing "Bout" the seed's weight-class table doesn't have; the "Details" text can be junk (`to`) |
+| Fighter page (`/fighter-details/<id>`) | name, nickname, height `5' 10"`, reach `71"`, stance, DOB `Jul 20, 1986` | **career rates (SLpM, accuracy, ...) and the record are on the same list, "as of today", and are never read** (rule 1); a missing value is `--` (an empty stance is just blank); heights and reach convert to exactly the seed's centimetres (Burns 177.8 / 180.34) |
+
+Differences between these pages and the seed, now verified by the seed-vs-scrape test (`services/worker/tests/ingest/test_seed_match.py`, D-019): for the six fixture fights, their events, fighters and 32 stat rows, every column matches except these six values (the page wins in each case):
+- Vologdin vs Castaneda: seed `outcome = 'unknown'` (silver's winner matched neither fighter), page says draw (majority decision).
+- Santos vs Marscucci (1998): seed `finish_time_sec = 27`, page says 10:27 (627 s, "1 Rnd + OT (12-3)"). Probably a seed parse of "0:27".
+- Marwan Rahiki: the seed has no height, reach, DOB or stance; the site now publishes 5' 8", 72", May 10, 2002 and Orthodox.
+
+Upcoming bouts (an event page with no results yet) carry the fighters and weight class only: no title flag, round format, corner or result. They are stored as `scheduled` bouts with those fields NULL (D-023).
+
 ## Open items before Phase 1
 
 - [x] Check `http://ufcstats.com/robots.txt` and the site footer from your own machine; record results in DECISIONS.md. (D-004)
 - [x] Open the jerzyszocik silver Parquet and confirm per-round columns and date range. (see "Silver Parquet findings" below)
 - [x] Decide on ESPN (recommended: remove) and update the CLAUDE.md architecture line. (D-005)
 - [ ] Confirm MMA Fighting / MMA Junkie feed URLs and terms manually, or leave them out.
-- [ ] Phase 1b: find a live rankings source for upcoming fights (martj42 ends 2026-06-02) and settle how to reach ufcstats given the browser check above.
+- [ ] Phase 1b: find a live rankings source for upcoming fights (martj42 ends 2026-06-02).
+- [x] Settle how to reach ufcstats given the browser check above: we don't bypass it. Build against fixtures and a replay server, ask the operator for access, and add a permitted results source in Phase 1d (D-013, 2026-10-03).
