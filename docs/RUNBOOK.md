@@ -205,6 +205,22 @@ docker compose exec redis redis-cli -n 1 FLUSHDB
 
 and close terminal B (or `unset DATABASE_URL REDIS_URL SCRAPER_SOURCE UFCSTATS_REPLAY_BASE_URL SCRAPER_MIN_INTERVAL_MS INGEST_RETRY_BASE_S`) so later commands use your real `.env` again.
 
+### Benchmark the pipeline (replay server only)
+
+Needs `docker compose up -d` and a migrated database (the harness creates and migrates its own `cageops_bench` database and uses Redis database 2, so your dev data is never touched; it refuses to reset anything else). Everything runs on this machine against the replay server: **the numbers are replay numbers, never the real site's.** Don't run other heavy work while it runs, it shares the CPUs.
+
+```bash
+uv run python scripts/bench_ingest.py run --workers 4 --interval-ms 100 --latency-ms 250
+uv run python scripts/bench_ingest.py run --workers 4 --interval-ms 100 --latency-ms 250 --mode warm
+uv run python scripts/bench_ingest.py run --workers 4 --interval-ms 100 --latency-ms 250 --mode rerun
+uv run python scripts/bench_ingest.py matrix --only B,D
+```
+
+- `cold`: nothing cached, every page comes from the replay server. `warm`: pages are in `raw_pages`, the data tables are emptied, so the same rows are re-inserted with no network (the harness asserts zero requests). `rerun`: cache and tables both full; asserts nothing is inserted or updated. A warm or rerun run needs an earlier cold run's cache and rows.
+- A run prints one line (seconds, requests, jobs/minute, rows inserted / updated / unchanged) and appends a full record (including the CPU, commit and the workers' limiter-wait share) to `data/bench/results.jsonl`. A run whose numbers don't add up (dead letters, wrong row counts, unexpected requests) is recorded with `valid: false` and the reasons; don't quote it.
+- The rate-limit interval under 1000 ms is accepted only for the replay source; the harness and `ScraperSettings` both refuse it for the real site, and the replay URL must be on this machine.
+- Logs of every process of a run are in `data/bench/logs/`.
+
 ## Production
 
 _Written in Phase 2c (VM + docker compose) and rewritten in Phase 6 (k3s)._

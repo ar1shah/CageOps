@@ -84,6 +84,8 @@ data/                      local-only raw data (gitignored)
 - `uv run python -m cageops_worker.ingest dlq list [--reason R] | inspect <job_id> | replay <job_id> | replay --all [--reason R] | purge <job_id>` — the dead-letter queue
 - `uv run python -m cageops_worker.ingest breaker status | reset --yes` — see or clear the circuit breaker (check the site yourself first)
 - `uv run python scripts/standin_site.py` — a local stand-in for ufcstats.com that serves the saved fixtures (modes: ok / fail / challenge) for trying ingestion with no real traffic; walkthrough in `docs/RUNBOOK.md`
+- `uv run python scripts/standin_site.py --synthetic-events 52 --latency-ms 250` — the same server as a replay server: a generated year of weekly events, simulated response time (`--jitter`, `--seed`, `--corpus-end`, `--quiet`). Replay numbers are never real-site numbers
+- `uv run python scripts/bench_ingest.py run --workers 4 --interval-ms 100 --latency-ms 250 [--mode cold|warm|rerun]` — one ingestion benchmark run against the replay server (own `cageops_bench` database, Redis db 2); `matrix` runs the whole planned set (about an hour). Results go to `data/bench/results.jsonl`, the committed numbers to `docs/BENCHMARKS.md`
 
 ## DECISIONS.md entry format
 
