@@ -4,6 +4,7 @@ No test here makes a network request: the "site" is a Python function that recor
 request it receives, so a test can assert that a request was (or was not) sent.
 """
 
+import time
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -100,6 +101,7 @@ def make_fetcher(db, redis_client, site, clock, sleeps):
             settings=settings,
             sleep=overrides.pop("sleep", sleeps.append),
             clock=clock,
+            timer=overrides.pop("timer", time.perf_counter),
         )
 
     return build

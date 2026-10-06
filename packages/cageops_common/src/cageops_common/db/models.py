@@ -27,6 +27,7 @@ from sqlalchemy import (
     SmallInteger,
     String,
     Text,
+    UniqueConstraint,
     func,
 )
 from sqlalchemy.dialects.postgresql import JSONB
@@ -37,13 +38,26 @@ class Base(DeclarativeBase):
     pass
 
 
+_UFCSTATS_ID_FORMAT = "ufcstats_id ~ '^[0-9a-f]{16}$'"  # NULL passes: only real ufcstats ids
+
+
 class Fighter(Base):
     """Bio facts only. Career stats from the seed files are deliberately not stored."""
 
     __tablename__ = "fighters"
+    __table_args__ = (
+        CheckConstraint(_UFCSTATS_ID_FORMAT, name="ufcstats_id_format"),
+        CheckConstraint(
+            "ufcstats_id IS NOT NULL OR wikipedia_title IS NOT NULL", name="has_a_source_key"
+        ),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    ufcstats_id: Mapped[str] = mapped_column(String(32), unique=True)
+    # Only ever a real ufcstats id (a CHECK enforces the format); NULL for a fighter first seen
+    # on another source, who is then identified by that source's key (D-029).
+    ufcstats_id: Mapped[str | None] = mapped_column(String(32), unique=True)
+    # The /wiki/ link target: stable when the display name is edited.
+    wikipedia_title: Mapped[str | None] = mapped_column(Text, unique=True)
     name: Mapped[str] = mapped_column(Text)
     dob: Mapped[date | None] = mapped_column(Date)
     height_cm: Mapped[float | None]
@@ -68,9 +82,17 @@ class FighterAlias(Base):
 
 class Event(Base):
     __tablename__ = "events"
+    __table_args__ = (
+        CheckConstraint(_UFCSTATS_ID_FORMAT, name="ufcstats_id_format"),
+        CheckConstraint(
+            "ufcstats_id IS NOT NULL OR wikipedia_article_id IS NOT NULL", name="has_a_source_key"
+        ),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    ufcstats_id: Mapped[str] = mapped_column(String(32), unique=True)
+    ufcstats_id: Mapped[str | None] = mapped_column(String(32), unique=True)
+    # The article's wgArticleId: stable when the article is renamed.
+    wikipedia_article_id: Mapped[int | None] = mapped_column(BigInteger, unique=True)
     name: Mapped[str] = mapped_column(Text)
     event_date: Mapped[date] = mapped_column(Date, index=True)
     city: Mapped[str | None] = mapped_column(Text)
@@ -117,10 +139,19 @@ class Fight(Base):
             name="decision_type_values",
         ),
         CheckConstraint("gender IN ('M', 'F')", name="gender_values"),
+        CheckConstraint(_UFCSTATS_ID_FORMAT, name="ufcstats_id_format"),
+        CheckConstraint("result_source IN ('ufcstats', 'wikipedia')", name="result_source_values"),
+        CheckConstraint(
+            "(status = 'completed') = (result_source IS NOT NULL)",
+            name="result_source_iff_completed",
+        ),
+        # A fight's identity: one row per fighter pair per event (D-029).
+        UniqueConstraint("event_id", "fighter_a_id", "fighter_b_id", name="uq_fights_event_pair"),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    ufcstats_id: Mapped[str] = mapped_column(String(32), unique=True)
+    # NULL for a fight a non-ufcstats source created; identified by (event, pair) either way.
+    ufcstats_id: Mapped[str | None] = mapped_column(String(32), unique=True)
     event_id: Mapped[int] = mapped_column(ForeignKey("events.id"), index=True)
     # Neutral order: the smaller id is always fighter_a. Says nothing about the outcome.
     fighter_a_id: Mapped[int] = mapped_column(ForeignKey("fighters.id"), index=True)
@@ -135,6 +166,9 @@ class Fight(Base):
     # from its card) has NULL outcome, method and is_title_fight. 'unknown' outcome only ever
     # means "a completed fight whose result the seed couldn't determine".
     status: Mapped[str] = mapped_column(Text, server_default="completed")
+    # Whose result a completed fight carries: ufcstats always replaces wikipedia, never the reverse.
+    # NULL exactly when the fight has no result (scheduled or cancelled).
+    result_source: Mapped[str | None] = mapped_column(Text)
     # NULL for a scheduled bout: the event page doesn't say, and we never fake a False.
     is_title_fight: Mapped[bool | None] = mapped_column(Boolean)
     scheduled_rounds: Mapped[int | None] = mapped_column(SmallInteger)

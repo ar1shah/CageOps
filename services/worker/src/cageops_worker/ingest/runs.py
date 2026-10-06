@@ -14,6 +14,11 @@ from cageops_scraper.errors import SourceBlocked
 from cageops_worker.ingest.context import IngestContext
 from cageops_worker.ingest.jobs import _enqueue, events_list_url
 from cageops_worker.ingest.queue import EnqueueResult
+from cageops_worker.ingest.wikipedia_jobs import _enqueue_wiki, year_list_url
+
+
+class UnsupportedForSource(Exception):
+    """The command doesn't apply to the configured source."""
 
 
 def new_run_id() -> str:
@@ -53,6 +58,13 @@ def start_backfill(
     """Queue the discovery of every completed event from `since` to today."""
     ensure_not_blocked(ctx)
     run_id = run_id or new_run_id()
+    if ctx.source.name == "wikipedia":  # one list page per year, newest year first
+        year = ctx.today().year
+        result = _enqueue_wiki(
+            ctx, "wiki_discover_events", f"wiki-discover-{year}-since-{since}", run_id,
+            url=year_list_url(ctx, year), year=year, since=since.isoformat(), force=force,
+        )  # fmt: skip
+        return StartedRun(run_id, result)
     result = _enqueue(
         ctx, "discover_events", f"discover-completed-p1-since-{since}", run_id,
         url=events_list_url(ctx, "completed", 1),
@@ -65,6 +77,8 @@ def start_upcoming(
     ctx: IngestContext, *, force: bool = False, run_id: str | None = None
 ) -> StartedRun:
     """Queue a read of the upcoming events list."""
+    if ctx.source.name == "wikipedia":
+        raise UnsupportedForSource("scrape-upcoming isn't supported for the wikipedia source")
     ensure_not_blocked(ctx)
     run_id = run_id or new_run_id()
     result = _enqueue(

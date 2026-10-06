@@ -199,3 +199,26 @@ def strip_row(html_text: str, fight_id: str) -> str:
     stripped, n = pattern.subn("", html_text, count=1)
     assert n == 1, f"no row for {fight_id}"
     return stripped
+
+
+# -- saved Wikipedia pages (CC BY-SA 4.0: see the NOTICE beside them) ---------------------------
+
+WIKI_FIXTURES = Path(__file__).parents[3] / "scraper" / "tests" / "fixtures" / "wikipedia"
+
+
+@pytest.fixture
+def wiki_html():
+    """A saved Wikipedia page by file name, e.g. wiki_html("UFC_323")."""
+
+    def load(name: str) -> str:
+        return (WIKI_FIXTURES / f"{name}.html").read_text(encoding="utf-8")
+
+    return load
+
+
+@pytest.fixture
+def wiki_page(wiki_html):
+    """A saved event article, parsed: wiki_page("UFC_323")."""
+    from cageops_scraper.parsers.wikipedia_event import parse_event as parse_wiki_event
+
+    return lambda name: parse_wiki_event(wiki_html(name), "https://en.wikipedia.org/wiki/" + name)

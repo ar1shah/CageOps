@@ -205,6 +205,30 @@ docker compose exec redis redis-cli -n 1 FLUSHDB
 
 and close terminal B (or `unset DATABASE_URL REDIS_URL SCRAPER_SOURCE UFCSTATS_REPLAY_BASE_URL SCRAPER_MIN_INTERVAL_MS INGEST_RETRY_BASE_S`) so later commands use your real `.env` again.
 
+### Wikipedia results (Phase 1d: fill a gap while ufcstats is blocked)
+
+English Wikipedia's UFC event articles give results (winner, method, round, time) and no stats. We fetch only `/wiki/<Title>` article pages, which Wikipedia's robots.txt allows (D-028); the source refuses any other URL. Needs `docker compose up -d`, a migrated database, a seed load and a real contact email in `SCRAPER_USER_AGENT` (Wikimedia requires one). One source per worker process, each with its own queue:
+
+```bash
+export SCRAPER_SOURCE=wikipedia INGEST_QUEUE=ingest-wikipedia
+uv run python -m cageops_worker.ingest backfill --since 2026-05-17
+uv run python -m cageops_worker.ingest worker --burst
+uv run python -m cageops_worker.ingest status --run <RUN_ID>
+uv run python -m cageops_worker.ingest dlq list
+```
+
+The first backfill is about 25 requests (one list page per year plus one article per event), about a minute at 1 request/second. **Say what will be fetched before running it**, and add the requests and the revisions it read to the request log in D-013.
+
+- **`status --run` lists two things to read.** "Revisions read" is which revision of each article the results came from. "Fighters created from Wikipedia" is every fighter that matched nobody, with the link they came from: **read it for spelling variants** (a nickname, a married name, a transliteration). The check below cannot catch those.
+- **Held events.** An event whose article has a fighter name that looks like an existing fighter ends in `dlq list` as a `mapping_error`, and nothing from that event is written. `dlq inspect wiki-event-UFC_331` shows the name, its article link and the fighters it looks like, with why. Decide from evidence (same weight class and era in the seed, the article's own bout), never from the spelling alone:
+  - **It is the existing fighter:** add a row to `services/worker/src/cageops_worker/seed/aliases.csv`: `wikipedia,<name as written in the article>,<their ufcstats_id>,<the evidence>`. Find the id with `SELECT ufcstats_id, name FROM fighters WHERE name ILIKE '%surname%'`. Two fighters with one name: choose by weight class.
+  - **It is a new fighter:** add a row to `services/worker/src/cageops_worker/ingest/wikipedia_distinct_fighters.csv`: `<link title or Name_With_Underscores>,<the reason>`.
+  - Then `uv run python -m cageops_worker.ingest dlq replay --all` and `uv run python -m cageops_worker.ingest worker --burst`. No seed re-run is needed, and the replay makes no requests (the pages are cached). Repeat until `dlq list` is empty: an event can hold several names, and the check reports the first it meets.
+- **Precedence.** A ufcstats result is never replaced; Wikipedia fills a scheduled ufcstats bout that has no result; anomalies `source_disagreement`, `result_changed` and `ufcstats_scheduled_without_wikipedia_match` appear in the worker log. Nothing is ever cancelled by this source.
+- **Refreshing.** An event article is refetched after 24 hours until 30 days after the event, so a later edit is picked up by `backfill --since <today minus 30 days>`; older articles need `--force`. `scrape-upcoming` is refused for this source.
+- **After a run:** `uv run python -m cageops_worker.features rebuild` (history now runs through the latest Wikipedia event). Wikipedia fights count as fights but carry no stats.
+- **A new fixture page** (a real request, so announce it first): fetch it through the fetcher into `raw_pages`, save the HTML under the gitignored `data/fixtures/wikipedia/`, then `uv run python scripts/minimize_wikipedia_fixture.py data/fixtures/wikipedia/<page>.html --out services/scraper/tests/fixtures/wikipedia` and add the article to that directory's NOTICE (the fixtures are CC BY-SA 4.0).
+
 ### Benchmark the pipeline (replay server only)
 
 Needs `docker compose up -d` and a migrated database (the harness creates and migrates its own `cageops_bench` database and uses Redis database 2, so your dev data is never touched; it refuses to reset anything else). Everything runs on this machine against the replay server: **the numbers are replay numbers, never the real site's.** Don't run other heavy work while it runs, it shares the CPUs.

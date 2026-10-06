@@ -15,7 +15,7 @@ def make_silver_row(**overrides):
         "event_city": "Melbourne",
         "event_state": "NULL",  # silver's literal-string null
         "event_country": "Australia",
-        "f_1_url": "http://ufcstats.com/fighter-details/zzzz000000000001",
+        "f_1_url": "http://ufcstats.com/fighter-details/dddd000000000001",
         "f_1_name": "Robert Whittaker",
         "f_2_url": "http://ufcstats.com/fighter-details/aaaa000000000002",
         "f_2_name": "Israel Adesanya",
@@ -63,7 +63,7 @@ def second_fight():
         "event_url": "http://ufcstats.com/event-details/eeee000000000002",
         "event_name": "UFC 254",
         "event_date": date(2020, 10, 24),
-        "f_1_url": "http://ufcstats.com/fighter-details/mmmm000000000003",
+        "f_1_url": "http://ufcstats.com/fighter-details/cccc000000000003",
         "f_1_name": "Khabib Nurmagomedov",
         "f_2_url": "http://ufcstats.com/fighter-details/bbbb000000000004",
         "f_2_name": "Justin Gaethje",
@@ -74,3 +74,12 @@ def second_fight():
         "gender": "M",
         "title_fight": True,
     }
+
+
+@pytest.fixture(autouse=True)
+def no_alias_file_unless_a_test_asks(tmp_path, monkeypatch):
+    """The committed alias file points at seed fighters the empty test database doesn't have, so the
+    Wikipedia writer reads no alias file unless a test supplies one."""
+    monkeypatch.setattr(
+        "cageops_worker.ingest.store_wikipedia.ALIASES_CSV", tmp_path / "no_such_aliases.csv"
+    )

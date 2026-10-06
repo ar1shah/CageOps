@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import csv
 from collections import defaultdict
+from collections.abc import Collection
 from dataclasses import dataclass
 from datetime import date, timedelta
 from pathlib import Path
@@ -105,13 +106,20 @@ class NameResolver:
         return cls(fighters, aliases, activity)
 
 
-def load_aliases(conn: Connection, csv_path: Path = ALIASES_CSV) -> int:
-    """Upsert the reviewed alias list (source, alias, ufcstats_id) into fighter_aliases."""
+def load_aliases(
+    conn: Connection, csv_path: Path = ALIASES_CSV, *, sources: Collection[str] | None = None
+) -> int:
+    """Upsert the reviewed alias list (source, alias, ufcstats_id) into fighter_aliases.
+    `sources` limits it to those sources' rows (None means every row)."""
     if not csv_path.exists():
         return 0
     with csv_path.open(newline="") as f:
-        rows = list(csv.DictReader(f))
-    ids = dict(conn.execute(text("SELECT ufcstats_id, id FROM fighters")).all())
+        rows = [r for r in csv.DictReader(f) if sources is None or r["source"].strip() in sources]
+    ids = dict(
+        conn.execute(
+            text("SELECT ufcstats_id, id FROM fighters WHERE ufcstats_id IS NOT NULL")
+        ).all()
+    )
     loaded = 0
     for row in rows:
         fighter_id = ids.get(row["ufcstats_id"])

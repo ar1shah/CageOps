@@ -35,12 +35,14 @@ from cageops_worker.ingest.observe import Observer, probe_redis
 from cageops_worker.ingest.queue import EnqueueResult
 from cageops_worker.ingest.runs import (
     StartedRun,
+    UnsupportedForSource,
     ensure_not_blocked,
     months_before,
     start_backfill,
     start_upcoming,
 )
 from cageops_worker.ingest.upsert import read_counts
+from cageops_worker.ingest.wikipedia_jobs import read_details
 from cageops_worker.ingest.worker import run_worker
 
 PROG = "python -m cageops_worker.ingest"
@@ -164,8 +166,12 @@ def cmd_backfill(ctx: IngestContext, args: argparse.Namespace, say: Printer) -> 
     if since > ctx.today():
         say(f"error: --since {since} is in the future")
         return EXIT_ERROR
-    say(f"Backfill: every completed event from {since} to {ctx.today()}, then each event's fights")
-    say("and fighters. " + _describe_fetching(ctx, args.force))
+    if ctx.source.name == "wikipedia":
+        say(f"Backfill: every UFC event article from {since} to {ctx.today()}, one request each")
+        say("(plus one list page per year). " + _describe_fetching(ctx, args.force))
+    else:
+        say(f"Backfill: every completed event from {since} to {ctx.today()}, then each event's")
+        say("fights and fighters. " + _describe_fetching(ctx, args.force))
     try:
         started = start_backfill(ctx, since, force=args.force)
     except SourceBlocked as exc:
@@ -178,6 +184,9 @@ def cmd_scrape_upcoming(ctx: IngestContext, args: argparse.Namespace, say: Print
     say(_describe_fetching(ctx, args.force))
     try:
         started = start_upcoming(ctx, force=args.force)
+    except UnsupportedForSource as exc:
+        say(f"error: {exc}")
+        return EXIT_ERROR
     except SourceBlocked as exc:
         return _refused(say, exc)
     return _after_queueing(say, started, "a read of the upcoming events")
@@ -209,7 +218,11 @@ def cmd_status(ctx: IngestContext, args: argparse.Namespace, say: Printer) -> in
     depth = snap.queue_depth or {}
     idle = not any(depth.get(k) for k in ("queued", "scheduled", "started"))
     run: dict[str, dict[str, int]] | None = None
+    revisions: dict[str, str] = {}
+    stubs: dict[str, str] = {}
     if args.run:
+        revisions = read_details(ctx.redis, args.run, "revisions")  # Wikipedia runs only
+        stubs = read_details(ctx.redis, args.run, "stubs")
         run = {}
         for key, count in sorted(read_counts(ctx.redis, args.run).items()):
             table, action = key.split(":", 1)
@@ -224,7 +237,11 @@ def cmd_status(ctx: IngestContext, args: argparse.Namespace, say: Printer) -> in
                 "dead_letters": snap.dead_letters,
                 "breaker": dataclasses.asdict(snap.breaker) if snap.breaker else None,
                 "postgres_ok": snap.postgres_ok,
-                "run": {"run_id": args.run, "rows": run} if args.run else None,
+                "run": (
+                    {"run_id": args.run, "rows": run, "revisions": revisions, "stubs": stubs}
+                    if args.run
+                    else None
+                ),
             }
         )
         return EXIT_OK
@@ -247,6 +264,14 @@ def cmd_status(ctx: IngestContext, args: argparse.Namespace, say: Printer) -> in
             say(f"  {table:<18} {cells}")
         if not run:
             say("  no rows recorded (nothing has run yet, or the id is wrong)")
+        if revisions:
+            say("  revisions read (article: wgRevisionId)")
+            for article, revision in revisions.items():
+                say(f"    {article}: {revision}")
+        if stubs:
+            say("  fighters created from Wikipedia (link: name), review for spelling variants")
+            for link, name in stubs.items():
+                say(f"    {link}: {name}")
     return EXIT_OK
 
 

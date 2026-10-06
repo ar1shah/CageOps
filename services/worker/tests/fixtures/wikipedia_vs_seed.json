@@ -1,0 +1,977 @@
+{
+ "about": "What the seed (Kaggle silver, ufcstats results) holds for the same fights as five saved Wikipedia cards, exported from the local database on 2026-10-06. Facts only: winner, outcome, method, decision type, round, time, title flag, weight class, gender.",
+ "unmatched_by_name": [
+  [
+   "UFC_244",
+   "Katlyn Chookagian",
+   "Jennifer Maia",
+   "Katlyn Cerminara"
+  ],
+  [
+   "UFC_249",
+   "Alexey Oleynik",
+   "Fabrício Werdum",
+   "Aleksei Oleinik"
+  ],
+  [
+   "UFC_249",
+   "Carla Esparza",
+   "Michelle Waterson",
+   "Michelle Waterson-Gomez"
+  ],
+  [
+   "UFC_259",
+   "Amanda Lemos",
+   "Lívia Renata Souza",
+   "Livinha Souza"
+  ],
+  [
+   "UFC_321",
+   "Ikram Aliskerov",
+   "Park Jun-yong",
+   "JunYong Park"
+  ],
+  [
+   "UFC_321",
+   "Nathaniel Wood",
+   "Jose Miguel Delgado",
+   "Jose Delgado"
+  ],
+  [
+   "UFC_321",
+   "Mizuki Inoue",
+   "Jaqueline Amorim",
+   "Mizuki"
+  ]
+ ],
+ "fights": [
+  {
+   "card": "UFC_244",
+   "first": "Jorge Masvidal",
+   "second": "Nate Diaz",
+   "seed": {
+    "outcome": "win",
+    "winner": "jorge masvidal",
+    "method": "ko_tko",
+    "decision_type": null,
+    "finish_round": 3,
+    "finish_time_sec": 300,
+    "is_title_fight": false,
+    "weight_class": "Welterweight",
+    "gender": "M"
+   }
+  },
+  {
+   "card": "UFC_244",
+   "first": "Darren Till",
+   "second": "Kelvin Gastelum",
+   "seed": {
+    "outcome": "win",
+    "winner": "darren till",
+    "method": "decision",
+    "decision_type": "split",
+    "finish_round": 3,
+    "finish_time_sec": 300,
+    "is_title_fight": false,
+    "weight_class": "Middleweight",
+    "gender": "M"
+   }
+  },
+  {
+   "card": "UFC_244",
+   "first": "Stephen Thompson",
+   "second": "Vicente Luque",
+   "seed": {
+    "outcome": "win",
+    "winner": "stephen thompson",
+    "method": "decision",
+    "decision_type": "unanimous",
+    "finish_round": 3,
+    "finish_time_sec": 300,
+    "is_title_fight": false,
+    "weight_class": "Welterweight",
+    "gender": "M"
+   }
+  },
+  {
+   "card": "UFC_244",
+   "first": "Derrick Lewis",
+   "second": "Blagoy Ivanov",
+   "seed": {
+    "outcome": "win",
+    "winner": "derrick lewis",
+    "method": "decision",
+    "decision_type": "split",
+    "finish_round": 3,
+    "finish_time_sec": 300,
+    "is_title_fight": false,
+    "weight_class": "Heavyweight",
+    "gender": "M"
+   }
+  },
+  {
+   "card": "UFC_244",
+   "first": "Kevin Lee",
+   "second": "Gregor Gillespie",
+   "seed": {
+    "outcome": "win",
+    "winner": "kevin lee",
+    "method": "ko_tko",
+    "decision_type": null,
+    "finish_round": 1,
+    "finish_time_sec": 167,
+    "is_title_fight": false,
+    "weight_class": "Lightweight",
+    "gender": "M"
+   }
+  },
+  {
+   "card": "UFC_244",
+   "first": "Corey Anderson",
+   "second": "Johnny Walker",
+   "seed": {
+    "outcome": "win",
+    "winner": "corey anderson",
+    "method": "ko_tko",
+    "decision_type": null,
+    "finish_round": 1,
+    "finish_time_sec": 127,
+    "is_title_fight": false,
+    "weight_class": "Light Heavyweight",
+    "gender": "M"
+   }
+  },
+  {
+   "card": "UFC_244",
+   "first": "Shane Burgos",
+   "second": "Makwan Amirkhani",
+   "seed": {
+    "outcome": "win",
+    "winner": "shane burgos",
+    "method": "ko_tko",
+    "decision_type": null,
+    "finish_round": 3,
+    "finish_time_sec": 272,
+    "is_title_fight": false,
+    "weight_class": "Featherweight",
+    "gender": "M"
+   }
+  },
+  {
+   "card": "UFC_244",
+   "first": "Edmen Shahbazyan",
+   "second": "Brad Tavares",
+   "seed": {
+    "outcome": "win",
+    "winner": "edmen shahbazyan",
+    "method": "ko_tko",
+    "decision_type": null,
+    "finish_round": 1,
+    "finish_time_sec": 147,
+    "is_title_fight": false,
+    "weight_class": "Middleweight",
+    "gender": "M"
+   }
+  },
+  {
+   "card": "UFC_244",
+   "first": "Jairzinho Rozenstruik",
+   "second": "Andrei Arlovski",
+   "seed": {
+    "outcome": "win",
+    "winner": "jairzinho rozenstruik",
+    "method": "ko_tko",
+    "decision_type": null,
+    "finish_round": 1,
+    "finish_time_sec": 29,
+    "is_title_fight": false,
+    "weight_class": "Heavyweight",
+    "gender": "M"
+   }
+  },
+  {
+   "card": "UFC_244",
+   "first": "Lyman Good",
+   "second": "Chance Rencountre",
+   "seed": {
+    "outcome": "win",
+    "winner": "lyman good",
+    "method": "ko_tko",
+    "decision_type": null,
+    "finish_round": 3,
+    "finish_time_sec": 123,
+    "is_title_fight": false,
+    "weight_class": "Welterweight",
+    "gender": "M"
+   }
+  },
+  {
+   "card": "UFC_244",
+   "first": "Hakeem Dawodu",
+   "second": "Julio Arce",
+   "seed": {
+    "outcome": "win",
+    "winner": "hakeem dawodu",
+    "method": "decision",
+    "decision_type": "split",
+    "finish_round": 3,
+    "finish_time_sec": 300,
+    "is_title_fight": false,
+    "weight_class": "Featherweight",
+    "gender": "M"
+   }
+  },
+  {
+   "card": "UFC_249",
+   "first": "Justin Gaethje",
+   "second": "Tony Ferguson",
+   "seed": {
+    "outcome": "win",
+    "winner": "justin gaethje",
+    "method": "ko_tko",
+    "decision_type": null,
+    "finish_round": 5,
+    "finish_time_sec": 219,
+    "is_title_fight": true,
+    "weight_class": "Lightweight",
+    "gender": "M"
+   }
+  },
+  {
+   "card": "UFC_249",
+   "first": "Henry Cejudo",
+   "second": "Dominick Cruz",
+   "seed": {
+    "outcome": "win",
+    "winner": "henry cejudo",
+    "method": "ko_tko",
+    "decision_type": null,
+    "finish_round": 2,
+    "finish_time_sec": 298,
+    "is_title_fight": true,
+    "weight_class": "Bantamweight",
+    "gender": "M"
+   }
+  },
+  {
+   "card": "UFC_249",
+   "first": "Francis Ngannou",
+   "second": "Jairzinho Rozenstruik",
+   "seed": {
+    "outcome": "win",
+    "winner": "francis ngannou",
+    "method": "ko_tko",
+    "decision_type": null,
+    "finish_round": 1,
+    "finish_time_sec": 20,
+    "is_title_fight": false,
+    "weight_class": "Heavyweight",
+    "gender": "M"
+   }
+  },
+  {
+   "card": "UFC_249",
+   "first": "Calvin Kattar",
+   "second": "Jeremy Stephens",
+   "seed": {
+    "outcome": "win",
+    "winner": "calvin kattar",
+    "method": "ko_tko",
+    "decision_type": null,
+    "finish_round": 2,
+    "finish_time_sec": 169,
+    "is_title_fight": false,
+    "weight_class": "Featherweight",
+    "gender": "M"
+   }
+  },
+  {
+   "card": "UFC_249",
+   "first": "Greg Hardy",
+   "second": "Yorgan De Castro",
+   "seed": {
+    "outcome": "win",
+    "winner": "greg hardy",
+    "method": "decision",
+    "decision_type": "unanimous",
+    "finish_round": 3,
+    "finish_time_sec": 300,
+    "is_title_fight": false,
+    "weight_class": "Heavyweight",
+    "gender": "M"
+   }
+  },
+  {
+   "card": "UFC_249",
+   "first": "Anthony Pettis",
+   "second": "Donald Cerrone",
+   "seed": {
+    "outcome": "win",
+    "winner": "anthony pettis",
+    "method": "decision",
+    "decision_type": "unanimous",
+    "finish_round": 3,
+    "finish_time_sec": 300,
+    "is_title_fight": false,
+    "weight_class": "Welterweight",
+    "gender": "M"
+   }
+  },
+  {
+   "card": "UFC_249",
+   "first": "Vicente Luque",
+   "second": "Niko Price",
+   "seed": {
+    "outcome": "win",
+    "winner": "vicente luque",
+    "method": "ko_tko",
+    "decision_type": null,
+    "finish_round": 3,
+    "finish_time_sec": 217,
+    "is_title_fight": false,
+    "weight_class": "Welterweight",
+    "gender": "M"
+   }
+  },
+  {
+   "card": "UFC_249",
+   "first": "Bryce Mitchell",
+   "second": "Charles Rosa",
+   "seed": {
+    "outcome": "win",
+    "winner": "bryce mitchell",
+    "method": "decision",
+    "decision_type": "unanimous",
+    "finish_round": 3,
+    "finish_time_sec": 300,
+    "is_title_fight": false,
+    "weight_class": "Featherweight",
+    "gender": "M"
+   }
+  },
+  {
+   "card": "UFC_249",
+   "first": "Ryan Spann",
+   "second": "Sam Alvey",
+   "seed": {
+    "outcome": "win",
+    "winner": "ryan spann",
+    "method": "decision",
+    "decision_type": "split",
+    "finish_round": 3,
+    "finish_time_sec": 300,
+    "is_title_fight": false,
+    "weight_class": "Light Heavyweight",
+    "gender": "M"
+   }
+  },
+  {
+   "card": "UFC_259",
+   "first": "Jan Błachowicz",
+   "second": "Israel Adesanya",
+   "seed": {
+    "outcome": "win",
+    "winner": "jan blachowicz",
+    "method": "decision",
+    "decision_type": "unanimous",
+    "finish_round": 5,
+    "finish_time_sec": 300,
+    "is_title_fight": true,
+    "weight_class": "Light Heavyweight",
+    "gender": "M"
+   }
+  },
+  {
+   "card": "UFC_259",
+   "first": "Amanda Nunes",
+   "second": "Megan Anderson",
+   "seed": {
+    "outcome": "win",
+    "winner": "amanda nunes",
+    "method": "submission",
+    "decision_type": null,
+    "finish_round": 1,
+    "finish_time_sec": 123,
+    "is_title_fight": true,
+    "weight_class": "Women's Featherweight",
+    "gender": "F"
+   }
+  },
+  {
+   "card": "UFC_259",
+   "first": "Aljamain Sterling",
+   "second": "Petr Yan",
+   "seed": {
+    "outcome": "win",
+    "winner": "aljamain sterling",
+    "method": "dq",
+    "decision_type": null,
+    "finish_round": 4,
+    "finish_time_sec": 269,
+    "is_title_fight": true,
+    "weight_class": "Bantamweight",
+    "gender": "M"
+   }
+  },
+  {
+   "card": "UFC_259",
+   "first": "Islam Makhachev",
+   "second": "Drew Dober",
+   "seed": {
+    "outcome": "win",
+    "winner": "islam makhachev",
+    "method": "submission",
+    "decision_type": null,
+    "finish_round": 3,
+    "finish_time_sec": 97,
+    "is_title_fight": false,
+    "weight_class": "Lightweight",
+    "gender": "M"
+   }
+  },
+  {
+   "card": "UFC_259",
+   "first": "Aleksandar Rakić",
+   "second": "Thiago Santos",
+   "seed": {
+    "outcome": "win",
+    "winner": "aleksandar rakic",
+    "method": "decision",
+    "decision_type": "unanimous",
+    "finish_round": 3,
+    "finish_time_sec": 300,
+    "is_title_fight": false,
+    "weight_class": "Light Heavyweight",
+    "gender": "M"
+   }
+  },
+  {
+   "card": "UFC_259",
+   "first": "Dominick Cruz",
+   "second": "Casey Kenney",
+   "seed": {
+    "outcome": "win",
+    "winner": "dominick cruz",
+    "method": "decision",
+    "decision_type": "split",
+    "finish_round": 3,
+    "finish_time_sec": 300,
+    "is_title_fight": false,
+    "weight_class": "Bantamweight",
+    "gender": "M"
+   }
+  },
+  {
+   "card": "UFC_259",
+   "first": "Kyler Phillips",
+   "second": "Song Yadong",
+   "seed": {
+    "outcome": "win",
+    "winner": "kyler phillips",
+    "method": "decision",
+    "decision_type": "unanimous",
+    "finish_round": 3,
+    "finish_time_sec": 300,
+    "is_title_fight": false,
+    "weight_class": "Bantamweight",
+    "gender": "M"
+   }
+  },
+  {
+   "card": "UFC_259",
+   "first": "Askar Askarov",
+   "second": "Joseph Benavidez",
+   "seed": {
+    "outcome": "win",
+    "winner": "askar askarov",
+    "method": "decision",
+    "decision_type": "unanimous",
+    "finish_round": 3,
+    "finish_time_sec": 300,
+    "is_title_fight": false,
+    "weight_class": "Flyweight",
+    "gender": "M"
+   }
+  },
+  {
+   "card": "UFC_259",
+   "first": "Kai Kara-France",
+   "second": "Rogério Bontorin",
+   "seed": {
+    "outcome": "win",
+    "winner": "kai kara france",
+    "method": "ko_tko",
+    "decision_type": null,
+    "finish_round": 1,
+    "finish_time_sec": 295,
+    "is_title_fight": false,
+    "weight_class": "Flyweight",
+    "gender": "M"
+   }
+  },
+  {
+   "card": "UFC_259",
+   "first": "Tim Elliott",
+   "second": "Jordan Espinosa",
+   "seed": {
+    "outcome": "win",
+    "winner": "tim elliott",
+    "method": "decision",
+    "decision_type": "unanimous",
+    "finish_round": 3,
+    "finish_time_sec": 300,
+    "is_title_fight": false,
+    "weight_class": "Flyweight",
+    "gender": "M"
+   }
+  },
+  {
+   "card": "UFC_259",
+   "first": "Kennedy Nzechukwu",
+   "second": "Carlos Ulberg",
+   "seed": {
+    "outcome": "win",
+    "winner": "kennedy nzechukwu",
+    "method": "ko_tko",
+    "decision_type": null,
+    "finish_round": 2,
+    "finish_time_sec": 199,
+    "is_title_fight": false,
+    "weight_class": "Light Heavyweight",
+    "gender": "M"
+   }
+  },
+  {
+   "card": "UFC_259",
+   "first": "Sean Brady",
+   "second": "Jake Matthews",
+   "seed": {
+    "outcome": "win",
+    "winner": "sean brady",
+    "method": "submission",
+    "decision_type": null,
+    "finish_round": 3,
+    "finish_time_sec": 208,
+    "is_title_fight": false,
+    "weight_class": "Welterweight",
+    "gender": "M"
+   }
+  },
+  {
+   "card": "UFC_259",
+   "first": "Uroš Medić",
+   "second": "Aalon Cruz",
+   "seed": {
+    "outcome": "win",
+    "winner": "uros medic",
+    "method": "ko_tko",
+    "decision_type": null,
+    "finish_round": 1,
+    "finish_time_sec": 100,
+    "is_title_fight": false,
+    "weight_class": "Lightweight",
+    "gender": "M"
+   }
+  },
+  {
+   "card": "UFC_259",
+   "first": "Trevin Jones",
+   "second": "Mario Bautista",
+   "seed": {
+    "outcome": "win",
+    "winner": "trevin jones",
+    "method": "ko_tko",
+    "decision_type": null,
+    "finish_round": 2,
+    "finish_time_sec": 47,
+    "is_title_fight": false,
+    "weight_class": "Bantamweight",
+    "gender": "M"
+   }
+  },
+  {
+   "card": "UFC_321",
+   "first": "Tom Aspinall",
+   "second": "Ciryl Gane",
+   "seed": {
+    "outcome": "no_contest",
+    "winner": null,
+    "method": "other",
+    "decision_type": null,
+    "finish_round": 1,
+    "finish_time_sec": 275,
+    "is_title_fight": true,
+    "weight_class": "Heavyweight",
+    "gender": "M"
+   }
+  },
+  {
+   "card": "UFC_321",
+   "first": "Mackenzie Dern",
+   "second": "Virna Jandiroba",
+   "seed": {
+    "outcome": "win",
+    "winner": "mackenzie dern",
+    "method": "decision",
+    "decision_type": "unanimous",
+    "finish_round": 5,
+    "finish_time_sec": 300,
+    "is_title_fight": true,
+    "weight_class": "Women's Strawweight",
+    "gender": "F"
+   }
+  },
+  {
+   "card": "UFC_321",
+   "first": "Umar Nurmagomedov",
+   "second": "Mario Bautista",
+   "seed": {
+    "outcome": "win",
+    "winner": "umar nurmagomedov",
+    "method": "decision",
+    "decision_type": "unanimous",
+    "finish_round": 3,
+    "finish_time_sec": 300,
+    "is_title_fight": false,
+    "weight_class": "Bantamweight",
+    "gender": "M"
+   }
+  },
+  {
+   "card": "UFC_321",
+   "first": "Alexander Volkov",
+   "second": "Jailton Almeida",
+   "seed": {
+    "outcome": "win",
+    "winner": "alexander volkov",
+    "method": "decision",
+    "decision_type": "split",
+    "finish_round": 3,
+    "finish_time_sec": 300,
+    "is_title_fight": false,
+    "weight_class": "Heavyweight",
+    "gender": "M"
+   }
+  },
+  {
+   "card": "UFC_321",
+   "first": "Azamat Murzakanov",
+   "second": "Aleksandar Rakić",
+   "seed": {
+    "outcome": "win",
+    "winner": "azamat murzakanov",
+    "method": "ko_tko",
+    "decision_type": null,
+    "finish_round": 1,
+    "finish_time_sec": 191,
+    "is_title_fight": false,
+    "weight_class": "Light Heavyweight",
+    "gender": "M"
+   }
+  },
+  {
+   "card": "UFC_321",
+   "first": "Quillan Salkilld",
+   "second": "Nasrat Haqparast",
+   "seed": {
+    "outcome": "win",
+    "winner": "quillan salkilld",
+    "method": "ko_tko",
+    "decision_type": null,
+    "finish_round": 1,
+    "finish_time_sec": 150,
+    "is_title_fight": false,
+    "weight_class": "Lightweight",
+    "gender": "M"
+   }
+  },
+  {
+   "card": "UFC_321",
+   "first": "Ľudovít Klein",
+   "second": "Mateusz Rębecki",
+   "seed": {
+    "outcome": "win",
+    "winner": "ludovit klein",
+    "method": "decision",
+    "decision_type": "majority",
+    "finish_round": 3,
+    "finish_time_sec": 300,
+    "is_title_fight": false,
+    "weight_class": "Lightweight",
+    "gender": "M"
+   }
+  },
+  {
+   "card": "UFC_321",
+   "first": "Valter Walker",
+   "second": "Louie Sutherland",
+   "seed": {
+    "outcome": "win",
+    "winner": "valter walker",
+    "method": "submission",
+    "decision_type": null,
+    "finish_round": 1,
+    "finish_time_sec": 84,
+    "is_title_fight": false,
+    "weight_class": "Heavyweight",
+    "gender": "M"
+   }
+  },
+  {
+   "card": "UFC_321",
+   "first": "Hamdy Abdelwahab",
+   "second": "Chris Barnett",
+   "seed": {
+    "outcome": "win",
+    "winner": "hamdy abdelwahab",
+    "method": "decision",
+    "decision_type": "unanimous",
+    "finish_round": 3,
+    "finish_time_sec": 300,
+    "is_title_fight": false,
+    "weight_class": "Heavyweight",
+    "gender": "M"
+   }
+  },
+  {
+   "card": "UFC_321",
+   "first": "Mitch Raposo",
+   "second": "Azat Maksum",
+   "seed": {
+    "outcome": "win",
+    "winner": "mitch raposo",
+    "method": "decision",
+    "decision_type": "unanimous",
+    "finish_round": 3,
+    "finish_time_sec": 300,
+    "is_title_fight": false,
+    "weight_class": "Flyweight",
+    "gender": "M"
+   }
+  },
+  {
+   "card": "UFC_323",
+   "first": "Petr Yan",
+   "second": "Merab Dvalishvili",
+   "seed": {
+    "outcome": "win",
+    "winner": "petr yan",
+    "method": "decision",
+    "decision_type": "unanimous",
+    "finish_round": 5,
+    "finish_time_sec": 300,
+    "is_title_fight": true,
+    "weight_class": "Bantamweight",
+    "gender": "M"
+   }
+  },
+  {
+   "card": "UFC_323",
+   "first": "Joshua Van",
+   "second": "Alexandre Pantoja",
+   "seed": {
+    "outcome": "win",
+    "winner": "joshua van",
+    "method": "ko_tko",
+    "decision_type": null,
+    "finish_round": 1,
+    "finish_time_sec": 26,
+    "is_title_fight": true,
+    "weight_class": "Flyweight",
+    "gender": "M"
+   }
+  },
+  {
+   "card": "UFC_323",
+   "first": "Tatsuro Taira",
+   "second": "Brandon Moreno",
+   "seed": {
+    "outcome": "win",
+    "winner": "tatsuro taira",
+    "method": "ko_tko",
+    "decision_type": null,
+    "finish_round": 2,
+    "finish_time_sec": 144,
+    "is_title_fight": false,
+    "weight_class": "Flyweight",
+    "gender": "M"
+   }
+  },
+  {
+   "card": "UFC_323",
+   "first": "Payton Talbott",
+   "second": "Henry Cejudo",
+   "seed": {
+    "outcome": "win",
+    "winner": "payton talbott",
+    "method": "decision",
+    "decision_type": "unanimous",
+    "finish_round": 3,
+    "finish_time_sec": 300,
+    "is_title_fight": false,
+    "weight_class": "Bantamweight",
+    "gender": "M"
+   }
+  },
+  {
+   "card": "UFC_323",
+   "first": "Jan Błachowicz",
+   "second": "Bogdan Guskov",
+   "seed": {
+    "outcome": "draw",
+    "winner": null,
+    "method": "decision",
+    "decision_type": "majority",
+    "finish_round": 3,
+    "finish_time_sec": 300,
+    "is_title_fight": false,
+    "weight_class": "Light Heavyweight",
+    "gender": "M"
+   }
+  },
+  {
+   "card": "UFC_323",
+   "first": "Manuel Torres",
+   "second": "Grant Dawson",
+   "seed": {
+    "outcome": "win",
+    "winner": "manuel torres",
+    "method": "ko_tko",
+    "decision_type": null,
+    "finish_round": 1,
+    "finish_time_sec": 145,
+    "is_title_fight": false,
+    "weight_class": "Lightweight",
+    "gender": "M"
+   }
+  },
+  {
+   "card": "UFC_323",
+   "first": "Chris Duncan",
+   "second": "Terrance McKinney",
+   "seed": {
+    "outcome": "win",
+    "winner": "chris duncan",
+    "method": "submission",
+    "decision_type": null,
+    "finish_round": 1,
+    "finish_time_sec": 150,
+    "is_title_fight": false,
+    "weight_class": "Lightweight",
+    "gender": "M"
+   }
+  },
+  {
+   "card": "UFC_323",
+   "first": "Maycee Barber",
+   "second": "Karine Silva",
+   "seed": {
+    "outcome": "win",
+    "winner": "maycee barber",
+    "method": "decision",
+    "decision_type": "unanimous",
+    "finish_round": 3,
+    "finish_time_sec": 300,
+    "is_title_fight": false,
+    "weight_class": "Women's Flyweight",
+    "gender": "F"
+   }
+  },
+  {
+   "card": "UFC_323",
+   "first": "Farès Ziam",
+   "second": "Nazim Sadykhov",
+   "seed": {
+    "outcome": "win",
+    "winner": "fares ziam",
+    "method": "ko_tko",
+    "decision_type": null,
+    "finish_round": 2,
+    "finish_time_sec": 299,
+    "is_title_fight": false,
+    "weight_class": "Lightweight",
+    "gender": "M"
+   }
+  },
+  {
+   "card": "UFC_323",
+   "first": "Brunno Ferreira",
+   "second": "Marvin Vettori",
+   "seed": {
+    "outcome": "win",
+    "winner": "brunno ferreira",
+    "method": "decision",
+    "decision_type": "unanimous",
+    "finish_round": 3,
+    "finish_time_sec": 300,
+    "is_title_fight": false,
+    "weight_class": "Middleweight",
+    "gender": "M"
+   }
+  },
+  {
+   "card": "UFC_323",
+   "first": "Jalin Turner",
+   "second": "Edson Barboza",
+   "seed": {
+    "outcome": "win",
+    "winner": "jalin turner",
+    "method": "ko_tko",
+    "decision_type": null,
+    "finish_round": 1,
+    "finish_time_sec": 144,
+    "is_title_fight": false,
+    "weight_class": "Lightweight",
+    "gender": "M"
+   }
+  },
+  {
+   "card": "UFC_323",
+   "first": "Iwo Baraniewski",
+   "second": "İbo Aslan",
+   "seed": {
+    "outcome": "win",
+    "winner": "iwo baraniewski",
+    "method": "ko_tko",
+    "decision_type": null,
+    "finish_round": 1,
+    "finish_time_sec": 89,
+    "is_title_fight": false,
+    "weight_class": "Light Heavyweight",
+    "gender": "M"
+   }
+  },
+  {
+   "card": "UFC_323",
+   "first": "Mansur Abdul-Malik",
+   "second": "Antonio Trócoli",
+   "seed": {
+    "outcome": "win",
+    "winner": "mansur abdul malik",
+    "method": "submission",
+    "decision_type": null,
+    "finish_round": 1,
+    "finish_time_sec": 69,
+    "is_title_fight": false,
+    "weight_class": "Middleweight",
+    "gender": "M"
+   }
+  },
+  {
+   "card": "UFC_323",
+   "first": "Mairon Santos",
+   "second": "Muhammad Naimov",
+   "seed": {
+    "outcome": "win",
+    "winner": "mairon santos",
+    "method": "ko_tko",
+    "decision_type": null,
+    "finish_round": 3,
+    "finish_time_sec": 21,
+    "is_title_fight": false,
+    "weight_class": "Featherweight",
+    "gender": "M"
+   }
+  }
+ ]
+}
