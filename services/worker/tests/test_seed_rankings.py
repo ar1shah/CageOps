@@ -91,13 +91,14 @@ def world(db):
     with db.begin() as conn:
         conn.execute(
             text(
-                "INSERT INTO fighters (id, ufcstats_id, name) VALUES (1, 'aaaa', 'Alice A'),"
-                " (2, 'bbbb', 'Bob B')"
+                "INSERT INTO fighters (id, ufcstats_id, name) VALUES"
+                " (1, 'aaaa000000000001', 'Alice A'), (2, 'bbbb000000000002', 'Bob B')"
             )
         )
         conn.execute(
             text(
-                "INSERT INTO events (id, ufcstats_id, name, event_date) VALUES (1, 'e1', 'E', :d)"
+                "INSERT INTO events (id, ufcstats_id, name, event_date)"
+                " VALUES (1, 'e100000000000001', 'E', :d)"
             ),
             {"d": FIGHT_DATE},
         )
@@ -105,8 +106,8 @@ def world(db):
             text(
                 "INSERT INTO fights (ufcstats_id, event_id, fighter_a_id, fighter_b_id,"
                 " weight_class, gender, is_title_fight, outcome, winner_id, method,"
-                " has_round_stats) VALUES ('f1', 1, 1, 2, 'Lightweight', 'M', false, 'win', 1,"
-                " 'decision', false)"
+                " has_round_stats, result_source) VALUES ('f100000000000001', 1, 1, 2,"
+                " 'Lightweight', 'M', false, 'win', 1, 'decision', false, 'ufcstats')"
             )
         )
     return db

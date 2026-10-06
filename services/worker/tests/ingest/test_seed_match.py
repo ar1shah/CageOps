@@ -93,6 +93,7 @@ def seed_database(db, golden):
                 "fighter_b_id": fighters[f["fighter_b"]],
                 "red_fighter_id": fighters[f["red"]] if f["red"] else None,
                 "winner_id": fighters[f["winner"]] if f["winner"] else None,
+                "result_source": "ufcstats",
             }
             fight_rows.append(row)
         conn.execute(insert(Fight.__table__), fight_rows)

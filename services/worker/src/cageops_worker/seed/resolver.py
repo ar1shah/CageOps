@@ -111,7 +111,11 @@ def load_aliases(conn: Connection, csv_path: Path = ALIASES_CSV) -> int:
         return 0
     with csv_path.open(newline="") as f:
         rows = list(csv.DictReader(f))
-    ids = dict(conn.execute(text("SELECT ufcstats_id, id FROM fighters")).all())
+    ids = dict(
+        conn.execute(
+            text("SELECT ufcstats_id, id FROM fighters WHERE ufcstats_id IS NOT NULL")
+        ).all()
+    )
     loaded = 0
     for row in rows:
         fighter_id = ids.get(row["ufcstats_id"])

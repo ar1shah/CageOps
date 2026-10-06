@@ -29,7 +29,7 @@ class World:
                 ),
                 {
                     "id": fighter_id,
-                    "uid": f"fighter{fighter_id:04d}",
+                    "uid": f"{fighter_id:016x}",
                     "name": name or f"Fighter {fighter_id}",
                     "dob": bio.get("dob"),
                     "h": bio.get("height_cm"),
@@ -69,18 +69,19 @@ class World:
                     "INSERT INTO events (ufcstats_id, name, event_date) VALUES (:u, :n, :d)"
                     " RETURNING id"
                 ),
-                {"u": f"event{n:04d}", "n": f"Event {n}", "d": on},
+                {"u": f"{n:016x}", "n": f"Event {n}", "d": on},
             ).scalar_one()
             fight_id = conn.execute(
                 text(
                     "INSERT INTO fights (ufcstats_id, event_id, fighter_a_id, fighter_b_id,"
                     " weight_class, gender, status, is_title_fight, outcome, winner_id, method,"
-                    " scheduled_rounds, finish_round, finish_time_sec, has_round_stats)"
+                    " scheduled_rounds, finish_round, finish_time_sec, has_round_stats,"
+                    " result_source)"
                     " VALUES (:u, :e, :a, :b, 'Lightweight', 'M', :status, :title, :outcome,"
-                    " :winner, :method, :rounds, :fr, :ft, false) RETURNING id"
+                    " :winner, :method, :rounds, :fr, :ft, false, :source) RETURNING id"
                 ),
                 {
-                    "u": f"fight{n:04d}",
+                    "u": f"{n:016x}",
                     "e": event_id,
                     "a": low,
                     "b": high,
@@ -92,6 +93,7 @@ class World:
                     "rounds": rounds,
                     "fr": finish_round if completed else None,
                     "ft": finish_time if completed else None,
+                    "source": "ufcstats" if completed else None,
                 },
             ).scalar_one()
             for fighter_id, values in (stats or {}).items():

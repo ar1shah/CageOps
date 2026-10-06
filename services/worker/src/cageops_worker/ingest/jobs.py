@@ -228,6 +228,7 @@ def discover_events(
         held = conn.execute(
             sa.text(
                 "SELECT e.ufcstats_id, e.event_date FROM events e WHERE e.event_date >= :today"
+                " AND e.ufcstats_id IS NOT NULL"
                 " AND EXISTS (SELECT 1 FROM fights f WHERE f.event_id = e.id"
                 " AND f.status = 'scheduled')"
             ),

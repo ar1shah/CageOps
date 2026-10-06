@@ -221,9 +221,9 @@ def test_too_many_red_corner_disagreements_abort_without_writing(
         fights.append(
             silver_row(
                 fight_url=f"http://ufcstats.com/fight-details/{i:016x}",
-                f_1_url=f"http://ufcstats.com/fighter-details/p{i:015x}",
+                f_1_url=f"http://ufcstats.com/fighter-details/a{i:015x}",
                 f_1_name=f"Red {i}",
-                f_2_url=f"http://ufcstats.com/fighter-details/q{i:015x}",
+                f_2_url=f"http://ufcstats.com/fighter-details/b{i:015x}",
                 f_2_name=f"Blue {i}",
                 winner=f"Red {i}",
                 event_date=date(2021, 1, 1),
@@ -284,3 +284,22 @@ def test_committed_verified_disagreements_file_is_well_formed():
 
     assert len(entries) == 2
     assert all(e["verdict"] == "mdabbert wrong" and e["evidence"] for e in entries.values())
+
+
+def test_odds_loading_still_works_when_another_sources_rows_exist(
+    db, tmp_path, silver_row, second_fight
+):
+    """Smoke test (D-029): the id maps skip NULL-id rows. The filter is defensive: a None key in
+    those dicts is harmless, so this test cannot fail without it."""
+    silver = silver_with_odds(tmp_path, silver_row, second_fight)
+    load_silver(db, silver, "s")
+    with db.begin() as conn:
+        conn.execute(text("INSERT INTO fighters (wikipedia_title, name) VALUES ('X_Y', 'X Y')"))
+        conn.execute(text("INSERT INTO fighters (wikipedia_title, name) VALUES ('Z_W', 'Z W')"))
+    before = load_silver_odds(db, silver, "s")
+
+    again = load_silver_odds(db, silver, "s")
+
+    assert again == before
+    with db.connect() as conn:
+        assert conn.execute(text("SELECT count(*) FROM odds")).scalar_one() > 0

@@ -28,12 +28,16 @@ def seed_fight(conn, a=1, b=2, **overrides):
     """Insert two fighters, an event and one fight; returns the fight id."""
     conn.execute(
         text(
-            "INSERT INTO fighters (id, ufcstats_id, name) VALUES (:a, 'fa', 'A'), (:b, 'fb', 'B')"
+            "INSERT INTO fighters (id, ufcstats_id, name) VALUES"
+            " (:a, 'aaaa000000000001', 'A'), (:b, 'bbbb000000000002', 'B')"
         ),
         {"a": a, "b": b},
     )
     conn.execute(
-        text("INSERT INTO events (id, ufcstats_id, name, event_date) VALUES (1, 'e1', 'E', :d)"),
+        text(
+            "INSERT INTO events (id, ufcstats_id, name, event_date)"
+            " VALUES (1, 'e100000000000001', 'E', :d)"
+        ),
         {"d": date(2019, 10, 5)},
     )
     row = {
@@ -47,9 +51,10 @@ def seed_fight(conn, a=1, b=2, **overrides):
     return conn.execute(
         text(
             "INSERT INTO fights (ufcstats_id, event_id, fighter_a_id, fighter_b_id, red_fighter_id,"
-            " weight_class, gender, is_title_fight, outcome, winner_id, method, has_round_stats)"
-            " VALUES ('f1', 1, :a, :b, :red, 'Middleweight', 'M', true, :outcome, :winner,"
-            " :method, true) RETURNING id"
+            " weight_class, gender, is_title_fight, outcome, winner_id, method, has_round_stats,"
+            " result_source)"
+            " VALUES ('f100000000000001', 1, :a, :b, :red, 'Middleweight', 'M', true, :outcome,"
+            " :winner, :method, true, 'ufcstats') RETURNING id"
         ),
         row,
     ).scalar_one()
@@ -87,7 +92,9 @@ def test_win_requires_a_winner_and_non_win_must_not_have_one(db):
 
 def test_winner_must_be_a_participant(db):
     with pytest.raises(IntegrityError, match="winner_is_a_participant"), db.begin() as conn:
-        conn.execute(text("INSERT INTO fighters (id, ufcstats_id, name) VALUES (3, 'fc', 'C')"))
+        conn.execute(
+            text("INSERT INTO fighters (id, ufcstats_id, name) VALUES (3, 'cccc000000000003', 'C')")
+        )
         seed_fight(conn, winner=3)
 
 
@@ -149,32 +156,39 @@ def insert_bout(conn, **overrides):
     Defaults to a scheduled bout (no result at all)."""
     conn.execute(
         text(
-            "INSERT INTO fighters (id, ufcstats_id, name) VALUES (1, 'fa', 'A'), (2, 'fb', 'B')"
-            " ON CONFLICT DO NOTHING"
-        )
-    )
-    conn.execute(
-        text(
-            "INSERT INTO events (id, ufcstats_id, name, event_date) VALUES (1, 'e1', 'E', :d)"
+            "INSERT INTO events (id, ufcstats_id, name, event_date)"
+            " VALUES (1, 'e100000000000001', 'E', :d)"
             " ON CONFLICT DO NOTHING"
         ),
         {"d": date(2026, 10, 10)},
     )
     row = {
-        "uid": "bout1",
+        "uid": "b000000000000001",
         "status": "scheduled",
         "outcome": None,
         "winner": None,
         "method": None,
         "title": None,
         "stats": False,
+        "a": 1,
+        "b": 2,
     } | overrides
+    for fighter_id in (row["a"], row["b"]):
+        conn.execute(
+            text(
+                "INSERT INTO fighters (id, ufcstats_id, name) VALUES (:i, :u, 'F')"
+                " ON CONFLICT DO NOTHING"
+            ),
+            {"i": fighter_id, "u": f"{fighter_id:016x}"},
+        )
     return conn.execute(
         text(
             "INSERT INTO fights (ufcstats_id, event_id, fighter_a_id, fighter_b_id, weight_class,"
-            " gender, is_title_fight, outcome, winner_id, method, has_round_stats, status)"
-            " VALUES (:uid, 1, 1, 2, 'Middleweight', 'M', :title, :outcome, :winner, :method,"
-            " :stats, :status) RETURNING id"
+            " gender, is_title_fight, outcome, winner_id, method, has_round_stats, status,"
+            " result_source)"
+            " VALUES (:uid, 1, :a, :b, 'Middleweight', 'M', :title, :outcome, :winner, :method,"
+            " :stats, :status, CASE WHEN :status = 'completed' THEN 'ufcstats' END)"
+            " RETURNING id"
         ),
         row,
     ).scalar_one()
@@ -269,8 +283,8 @@ def test_a_scheduled_bout_becomes_completed_when_its_result_arrives(db):
         conn.execute(
             text(
                 "UPDATE fights SET status = 'completed', outcome = 'win', winner_id = 1,"
-                " method = 'decision', is_title_fight = false, has_round_stats = true"
-                " WHERE id = :i"
+                " method = 'decision', is_title_fight = false, has_round_stats = true,"
+                " result_source = 'ufcstats' WHERE id = :i"
             ),
             {"i": fight_id},
         )
@@ -279,12 +293,12 @@ def test_a_scheduled_bout_becomes_completed_when_its_result_arrives(db):
 
 def test_completed_fights_view_only_has_finished_fights(db):
     with db.begin() as conn:
-        insert_bout(conn, uid="played", **COMPLETED)
-        insert_bout(conn, uid="upcoming")
-        insert_bout(conn, uid="removed", status="cancelled")
+        insert_bout(conn, uid="a000000000000001", **COMPLETED)
+        insert_bout(conn, uid="a000000000000002", b=3)
+        insert_bout(conn, uid="a000000000000003", b=4, status="cancelled")
         visible = conn.execute(text("SELECT ufcstats_id FROM completed_fights")).scalars().all()
 
-    assert visible == ["played"]
+    assert visible == ["a000000000000001"]
 
 
 def test_the_rankings_view_also_covers_scheduled_bouts(db):

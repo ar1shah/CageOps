@@ -114,10 +114,13 @@ def test_committed_aliases_file_is_well_formed():
 def test_load_aliases_is_scoped_idempotent_and_rejects_unknown_fighters(db, tmp_path):
     with db.begin() as conn:
         conn.execute(
-            text("INSERT INTO fighters (id, ufcstats_id, name) VALUES (1, 'aaaa', 'King Green')")
+            text(
+                "INSERT INTO fighters (id, ufcstats_id, name)"
+                " VALUES (1, 'aaaa000000000001', 'King Green')"
+            )
         )
     good = tmp_path / "aliases.csv"
-    good.write_text("source,alias,ufcstats_id,note\nmdabbert,Bobby Green,aaaa,x\n")
+    good.write_text("source,alias,ufcstats_id,note\nmdabbert,Bobby Green,aaaa000000000001,x\n")
 
     with db.begin() as conn:
         load_aliases(conn, good)

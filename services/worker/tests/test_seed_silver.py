@@ -120,7 +120,7 @@ def test_fighter_ids_follow_ufcstats_id_order_not_fight_order(db, tmp_path, silv
 
     with db.connect() as conn:
         names = conn.execute(text("SELECT name FROM fighters ORDER BY id")).scalars().all()
-    # ufcstats ids: Adesanya "aaaa..." < Whittaker "zzzz...", although Whittaker is slot 1
+    # ufcstats ids: Adesanya "aaaa..." < Whittaker "dddd...", although Whittaker is slot 1
     assert names == ["Israel Adesanya", "Robert Whittaker"]
 
 

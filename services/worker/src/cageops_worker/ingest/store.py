@@ -169,7 +169,10 @@ def reconcile_event_bouts(
     """
     result = ReconcileResult()
     held = conn.execute(
-        sa.select(FIGHTS.c.ufcstats_id, FIGHTS.c.status).where(FIGHTS.c.event_id == event_db_id)
+        sa.select(FIGHTS.c.ufcstats_id, FIGHTS.c.status).where(
+            FIGHTS.c.event_id == event_db_id,
+            FIGHTS.c.ufcstats_id.is_not(None),  # a fight another source created has no ufcstats id
+        )
     ).all()
     present = set(present_fight_ids)
     scheduled_missing = [u for u, status in held if status == "scheduled" and u not in present]
@@ -229,6 +232,7 @@ def write_completed_fight(conn: Connection, mapped: MappedFight) -> FightWriteRe
         )
     stub_counts, ids = ensure_fighters(conn, mapped.fighters)
     row = _fight_row(fight, event_db_id, ids)
+    row["result_source"] = "ufcstats"  # ufcstats results always replace another source's (D-029)
     previous = conn.execute(
         sa.select(FIGHTS.c.status, FIGHTS.c.gender, *(FIGHTS.c[c] for c in RESULT_COLUMNS)).where(
             FIGHTS.c.ufcstats_id == fight["ufcstats_id"]
@@ -255,6 +259,7 @@ def write_completed_fight(conn: Connection, mapped: MappedFight) -> FightWriteRe
         # the result is replaced as a unit, NULLs included: an overturned win must clear its winner
         replace=[
             *RESULT_COLUMNS,
+            "result_source",
             "status",
             "event_id",
             "fighter_a_id",

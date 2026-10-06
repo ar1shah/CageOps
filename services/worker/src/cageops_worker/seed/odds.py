@@ -349,11 +349,18 @@ def silver_odds_rows(
 def load_silver_odds(engine: Engine, path: Path, sha256: str) -> dict[str, Any]:
     parquet_rows = pq.read_table(path).to_pylist()
     with engine.begin() as conn:
-        fighter_ids = dict(conn.execute(text("SELECT ufcstats_id, id FROM fighters")).all())
+        fighter_ids = dict(
+            conn.execute(
+                text("SELECT ufcstats_id, id FROM fighters WHERE ufcstats_id IS NOT NULL")
+            ).all()
+        )
         fights = {
             r[0]: (r[1], r[2], r[3])
             for r in conn.execute(
-                text("SELECT ufcstats_id, id, fighter_a_id, fighter_b_id FROM fights")
+                text(
+                    "SELECT ufcstats_id, id, fighter_a_id, fighter_b_id FROM fights"
+                    " WHERE ufcstats_id IS NOT NULL"
+                )
             )
         }
         odds, counts = silver_odds_rows(parquet_rows, fighter_ids, fights)

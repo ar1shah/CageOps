@@ -178,7 +178,8 @@ def _upsert(conn, table: Table, rows: Sequence[dict[str, Any]], keys: Sequence[s
 
 
 def _id_map(conn, table: Table) -> dict[str, int]:
-    return dict(conn.execute(select(table.c.ufcstats_id, table.c.id)).all())
+    stmt = select(table.c.ufcstats_id, table.c.id).where(table.c.ufcstats_id.is_not(None))
+    return dict(conn.execute(stmt).all())
 
 
 def read_silver(path: Path) -> list[dict[str, Any]]:
@@ -242,6 +243,7 @@ def load_silver(engine: Engine, path: Path, sha256: str) -> dict[str, Any]:
                     "fighter_a_id": a,
                     "fighter_b_id": b,
                     "red_fighter_id": ids[1],  # silver's first slot is the red corner (D-009)
+                    "result_source": "ufcstats",
                     "outcome": "win" if winner_id else "unknown",
                     "winner_id": winner_id,
                 }
