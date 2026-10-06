@@ -286,3 +286,70 @@ class LoadRun(Base):
     rows_loaded: Mapped[int | None]
     rows_rejected: Mapped[int | None]
     report: Mapped[dict | None] = mapped_column(JSONB)
+
+
+class FightFeatures(Base):
+    """Point-in-time features: one row per (fight, fighter), built from that fighter's fights
+    strictly before the fight (D-027). Derived and rebuildable; `fights` stays the source of truth.
+
+    Rates are NULL when unknown (no stats, no trusted duration, or a zero denominator), never 0.
+    Each rate and count exists for the career and for the last 3 and last 5 prior fights.
+    """
+
+    __tablename__ = "fight_features"
+
+    fight_id: Mapped[int] = mapped_column(ForeignKey("fights.id"), primary_key=True)
+    fighter_id: Mapped[int] = mapped_column(ForeignKey("fighters.id"), primary_key=True)
+
+    # career window
+    sig_str_landed_pm_career: Mapped[float | None]
+    sig_str_absorbed_pm_career: Mapped[float | None]
+    sig_str_acc_career: Mapped[float | None]
+    sig_str_def_career: Mapped[float | None]
+    td_landed_per15_career: Mapped[float | None]
+    td_def_career: Mapped[float | None]
+    sub_att_per15_career: Mapped[float | None]
+    kd_per15_career: Mapped[float | None]
+    n_fights_career: Mapped[int]
+    n_fights_with_stats_career: Mapped[int]
+    n_fights_with_duration_career: Mapped[int]
+    # last3 window
+    sig_str_landed_pm_last3: Mapped[float | None]
+    sig_str_absorbed_pm_last3: Mapped[float | None]
+    sig_str_acc_last3: Mapped[float | None]
+    sig_str_def_last3: Mapped[float | None]
+    td_landed_per15_last3: Mapped[float | None]
+    td_def_last3: Mapped[float | None]
+    sub_att_per15_last3: Mapped[float | None]
+    kd_per15_last3: Mapped[float | None]
+    n_fights_last3: Mapped[int]
+    n_fights_with_stats_last3: Mapped[int]
+    n_fights_with_duration_last3: Mapped[int]
+    # last5 window
+    sig_str_landed_pm_last5: Mapped[float | None]
+    sig_str_absorbed_pm_last5: Mapped[float | None]
+    sig_str_acc_last5: Mapped[float | None]
+    sig_str_def_last5: Mapped[float | None]
+    td_landed_per15_last5: Mapped[float | None]
+    td_def_last5: Mapped[float | None]
+    sub_att_per15_last5: Mapped[float | None]
+    kd_per15_last5: Mapped[float | None]
+    n_fights_last5: Mapped[int]
+    n_fights_with_stats_last5: Mapped[int]
+    n_fights_with_duration_last5: Mapped[int]
+
+    prior_ufc_fights: Mapped[int]  # UFC fights in our DB only, strictly before this one
+    win_streak: Mapped[int | None]  # NULL when an unknown result is reached (D-027)
+    finish_rate: Mapped[float | None]
+    days_since_last_fight: Mapped[int | None]
+    age_days: Mapped[int | None]
+    height_cm: Mapped[float | None]
+    reach_cm: Mapped[float | None]
+    stance: Mapped[str | None] = mapped_column(Text)
+    weight_class: Mapped[str | None] = mapped_column(Text)
+    is_title_fight: Mapped[bool | None]
+    scheduled_rounds: Mapped[int | None] = mapped_column(SmallInteger)
+    has_unresolved_prior_fight: Mapped[bool]
+
+    built_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    load_run_id: Mapped[int] = mapped_column(ForeignKey("load_runs.id"))

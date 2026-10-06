@@ -11,6 +11,7 @@ from cageops_common.db.models import Base
 
 EXPECTED_TABLES = {
     "events",
+    "fight_features",
     "fight_round_stats",
     "fight_totals",
     "fighter_aliases",
