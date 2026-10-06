@@ -5,6 +5,7 @@ Kept separate from cageops_common's Settings so the API never needs scraper vari
 
 from functools import lru_cache
 from typing import Self
+from urllib.parse import urlsplit
 
 from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -12,6 +13,9 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 # CLAUDE.md rule 2: at most ~1 request/second against the real site.
 REAL_SITE_MIN_INTERVAL_MS = 1000
 PLACEHOLDER_CONTACT = "you@example.com"
+# The replay source may run faster than the real site (benchmarks), so it must be impossible to
+# point it at the real site. It only ever talks to this machine.
+LOOPBACK_HOSTS = ("127.0.0.1", "localhost", "::1")
 
 
 class ScraperSettings(BaseSettings):
@@ -39,6 +43,13 @@ class ScraperSettings(BaseSettings):
         ):
             raise ValueError(
                 f"SCRAPER_MIN_INTERVAL_MS must be >= {REAL_SITE_MIN_INTERVAL_MS} for the real site"
+            )
+        host = urlsplit(self.ufcstats_replay_base_url).hostname
+        if host not in LOOPBACK_HOSTS:
+            raise ValueError(
+                "UFCSTATS_REPLAY_BASE_URL must point at this machine "
+                f"({', '.join(LOOPBACK_HOSTS)}), not {host!r}: the replay source skips the real "
+                "site's 1 request/second floor, so it must never be able to reach the real site"
             )
         return self
 

@@ -385,7 +385,8 @@ def main(
     except ValidationError as exc:
         say("error: configuration is missing or invalid (see .env.example):")
         for problem in exc.errors():
-            say(f"  {'.'.join(str(p) for p in problem['loc'])}: {problem['msg']}")
+            where = ".".join(str(part) for part in problem["loc"])
+            say(f"  {where + ': ' if where else ''}{problem['msg'].removeprefix('Value error, ')}")
         return EXIT_ERROR
     except RedisError as exc:
         say(f"error: Redis problem: {exc}")
