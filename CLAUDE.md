@@ -86,6 +86,8 @@ data/                      local-only raw data (gitignored)
 - `uv run python scripts/standin_site.py` — a local stand-in for ufcstats.com that serves the saved fixtures (modes: ok / fail / challenge) for trying ingestion with no real traffic; walkthrough in `docs/RUNBOOK.md`
 - `uv run python scripts/standin_site.py --synthetic-events 52 --latency-ms 250` — the same server as a replay server: a generated year of weekly events, simulated response time (`--jitter`, `--seed`, `--corpus-end`, `--quiet`). Replay numbers are never real-site numbers
 - `uv run python scripts/bench_ingest.py run --workers 4 --interval-ms 100 --latency-ms 250 [--mode cold|warm|rerun]` — one ingestion benchmark run against the replay server (own `cageops_bench` database, Redis db 2); `matrix` runs the whole planned set (about an hour). Results go to `data/bench/results.jsonl`, the committed numbers to `docs/BENCHMARKS.md`
+- `uv run python -m cageops_worker.features rebuild [--today YYYY-MM-DD]` — rebuild `fight_features` (point-in-time, one transaction; prints a JSON report; exits 1 and changes nothing if a check fails)
+- `uv run python -m cageops_worker.features show --fighter "<name>" | --fighter-id N [--json]` — one fighter's feature rows in date order
 
 ## DECISIONS.md entry format
 
