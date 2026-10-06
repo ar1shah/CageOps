@@ -62,6 +62,7 @@ class Fetcher:
         settings: ScraperSettings,
         sleep: Callable[[float], None] = time.sleep,
         clock: Callable[[], datetime] = _utcnow,
+        timer: Callable[[], float] = time.perf_counter,
     ):
         self.source = source
         self.user_agent = settings.scraper_user_agent
@@ -70,6 +71,7 @@ class Fetcher:
         self._timeout_s = settings.scraper_timeout_s
         self._client = client
         self._clock = clock
+        self._timer = timer  # injectable so a test can make a response "slow" without waiting
         self.cache = PageCache(engine, source.name)
         self.limiter = RateLimiter(redis, source.name, sleep=sleep)
         self.breaker = CircuitBreaker(redis, source.name)
@@ -220,7 +222,7 @@ class Fetcher:
 
     def _get(self, url: str) -> httpx.Response:
         name = self.source.name
-        started = time.perf_counter()
+        started = self._timer()
         try:
             response = self._client.get(
                 url,
@@ -229,14 +231,22 @@ class Fetcher:
                 follow_redirects=False,  # we follow hops ourselves, through the cache and limiter
             )
         except httpx.HTTPError as exc:  # timeouts, connection resets, DNS failures, ...
-            FETCH_SECONDS.labels(name, "error").observe(time.perf_counter() - started)
+            FETCH_SECONDS.labels(name, "error").observe(self._timer() - started)
             raise RetryableFetchError(f"{type(exc).__name__} fetching {url}: {exc}") from exc
-        elapsed = time.perf_counter() - started
+        elapsed = self._timer() - started
         FETCH_SECONDS.labels(name, f"{response.status_code // 100}xx").observe(elapsed)
         log.info(
             "fetched",
             extra={"status": response.status_code, "elapsed_ms": round(elapsed * 1000)},
         )
+        slow = self.source.slow_response
+        if slow is not None and elapsed > slow.threshold_s:
+            # The site asked for a pause after a slow response: everyone waits, not just us.
+            self.limiter.penalize(slow.pause_s)
+            log.info(
+                "slow response; pausing every worker",
+                extra={"elapsed_ms": round(elapsed * 1000), "pause_s": slow.pause_s},
+            )
         return response
 
     def _store(self, url: str, status: int, html: str) -> Page:

@@ -26,6 +26,7 @@ class UfcStatsSource:
         "/fight-details/",
         "/fighter-details/",
     )
+    slow_response = None  # ufcstats states no such rule
 
     def __init__(self, name: str = "ufcstats", base_url: str = f"http://{REAL_HOST}"):
         self.name = name

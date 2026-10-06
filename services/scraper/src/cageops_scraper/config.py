@@ -12,6 +12,8 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # CLAUDE.md rule 2: at most ~1 request/second against the real site.
 REAL_SITE_MIN_INTERVAL_MS = 1000
+# Sources that talk to a real site (the replay source is excluded on purpose).
+REAL_SITES = ("ufcstats", "wikipedia")
 PLACEHOLDER_CONTACT = "you@example.com"
 # The replay source may run faster than the real site (benchmarks), so it must be impossible to
 # point it at the real site. It only ever talks to this machine.
@@ -30,6 +32,7 @@ class ScraperSettings(BaseSettings):
     scraper_source: str = "ufcstats"
     ufcstats_base_url: str = "http://ufcstats.com"
     ufcstats_replay_base_url: str = "http://127.0.0.1:8099"
+    wikipedia_base_url: str = "https://en.wikipedia.org"
 
     @model_validator(mode="after")
     def _polite_defaults(self) -> Self:
@@ -38,7 +41,7 @@ class ScraperSettings(BaseSettings):
                 "SCRAPER_USER_AGENT still has the placeholder contact; put your real email in it"
             )
         if (
-            self.scraper_source == "ufcstats"
+            self.scraper_source in REAL_SITES
             and self.scraper_min_interval_ms < REAL_SITE_MIN_INTERVAL_MS
         ):
             raise ValueError(

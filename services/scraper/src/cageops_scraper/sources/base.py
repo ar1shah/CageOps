@@ -41,11 +41,25 @@ class CachePolicy:
         return now - fetched_at < self.ttl
 
 
+@dataclass(frozen=True)
+class SlowResponse:
+    """A site's "if a request takes longer than this to serve, wait this long before the next one".
+
+    When a live response takes more than `threshold_s`, the fetcher pushes the next rate-limit slot
+    out by `pause_s` for ALL workers of the source (the same lever a 429 uses).
+    """
+
+    threshold_s: float
+    pause_s: float
+
+
 class Source(Protocol):
     name: str  # also the Redis key suffix and the raw_pages.source value
     base_url: str
     # Paths robots.txt must allow for us to run at all.
     required_paths: tuple[str, ...]
+    # None for a site that states no such rule.
+    slow_response: SlowResponse | None
 
     def canonical_url(self, url: str) -> str:
         """One spelling per page, so the cache never stores a page twice. Raises ValueError
