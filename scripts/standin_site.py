@@ -35,11 +35,12 @@ import re
 import sys
 import threading
 import time
+from datetime import date
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlsplit
 
-from replay_corpus import Corpus
+from replay_corpus import DEFAULT_END, Corpus
 
 DEFAULT_FIXTURES = Path(__file__).parents[1] / "services/scraper/tests/fixtures/ufcstats"
 ROBOTS = "User-agent: *\nAllow: /\n"
@@ -91,12 +92,17 @@ class StandIn:
         fixtures: Path = DEFAULT_FIXTURES,
         *,
         synthetic_events: int = 0,
+        corpus_end: date | None = None,
         latency_ms: float = 0.0,
         jitter: float = 0.2,
         seed: int = 0,
     ):
         self.pages = load_pages(fixtures)
-        self.corpus = Corpus(synthetic_events, fixtures=fixtures) if synthetic_events else None
+        self.corpus = (
+            Corpus(synthetic_events, end=corpus_end or DEFAULT_END, fixtures=fixtures)
+            if synthetic_events
+            else None
+        )
         self.challenge = (fixtures / CHALLENGE_FILE).read_text(encoding="utf-8")
         self.latency_ms, self.jitter = latency_ms, jitter
         self.base_url = ""  # set once the port is known (make_server)
@@ -223,6 +229,10 @@ def main(argv: list[str] | None = None) -> int:
         "--synthetic-events", type=int, default=0, metavar="N",
         help="serve N generated weekly events (13 pages each) instead of the saved pages",
     )  # fmt: skip
+    parser.add_argument(
+        "--corpus-end", type=date.fromisoformat, metavar="YYYY-MM-DD",
+        help="date of the newest synthetic event (default: the day the fixtures were saved)",
+    )  # fmt: skip
     parser.add_argument("--latency-ms", type=float, default=0.0, help="simulated response time")
     parser.add_argument(
         "--jitter", type=float, default=0.2, help="latency varies by +/- this share"
@@ -234,6 +244,7 @@ def main(argv: list[str] | None = None) -> int:
         args.port,
         args.fixtures,
         synthetic_events=args.synthetic_events,
+        corpus_end=args.corpus_end,
         latency_ms=args.latency_ms,
         jitter=args.jitter,
         seed=args.seed,

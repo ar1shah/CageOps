@@ -36,6 +36,9 @@ FIGHTER_FIXTURES = (
     "6eedb757f13b9978",
 )
 PAGE_SIZE = 25  # rows per events-list page, like the real list
+# The "next event" marker row on page 1 must never fall inside a backfill window, whatever day the
+# benchmark runs on, so it is dated far in the future.
+NEXT_EVENT_DATE = date(2099, 1, 1)
 ID_IN_URL = re.compile(r"(event|fight|fighter)-details/([0-9a-f]{16})")
 EVENT_PATH = re.compile(r"/(event|fight|fighter)-details/([0-9a-f]{16})$")
 LIST_PATH = re.compile(r"/statistics/events/completed(?:\?page=(\d+))?$")
@@ -205,8 +208,9 @@ class Corpus:
 
     def _list_page(self, number: int) -> str:
         head, marker, plain, tail = self._list_rows()
-        upcoming = self._row(marker, "7f98d9d5a10fa25c", "UFC Fight Night: Allen vs. Duncan",
-                             self.end + timedelta(days=7))  # fmt: skip
+        upcoming = self._row(
+            marker, "7f98d9d5a10fa25c", "UFC Fight Night: Allen vs. Duncan", NEXT_EVENT_DATE
+        )
         everything = [upcoming] + [
             self._row(plain, self.event_id(k), self.event_name(k), self.event_date(k))
             for k in range(self.events)
