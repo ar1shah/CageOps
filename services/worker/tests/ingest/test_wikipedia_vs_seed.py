@@ -1,6 +1,6 @@
 """How well do Wikipedia results agree with the seed's ufcstats results for the same fights?
 
-Four saved cards (UFC 249, 259, 321, 323), compared bout by bout with what the seed holds. The
+Five saved cards (UFC 244, 249, 259, 321, 323), compared bout by bout with what the seed holds. The
 expected differences are listed in full below, so a new one is a failure that shows what changed."""
 
 import json
@@ -48,7 +48,7 @@ def comparison():
     seed = {(f["card"], f["first"], f["second"]): f["seed"] for f in GOLDEN["fights"]}
     pages = {
         card: parse_event((FIXTURES / f"{card}.html").read_text(encoding="utf-8"), "u")
-        for card in ("UFC_249", "UFC_259", "UFC_321", "UFC_323")
+        for card in ("UFC_244", "UFC_249", "UFC_259", "UFC_321", "UFC_323")
     }
     compared, differences = 0, {}
     for card, page in pages.items():
@@ -64,9 +64,9 @@ def comparison():
     return pages, compared, differences
 
 
-def test_forty_seven_bouts_are_compared_and_every_difference_is_one_we_expect(comparison):
+def test_fifty_eight_bouts_are_compared_and_every_difference_is_one_we_expect(comparison):
     _, compared, differences = comparison
-    assert compared == 47
+    assert compared == 58
     assert differences == ALLOWED_DIFFERENCES
 
 
@@ -74,13 +74,14 @@ def test_every_outcome_winner_method_round_and_title_flag_agrees(comparison):
     _, compared, differences = comparison
     fields_that_differ = {field for _, _, field in differences}
     assert fields_that_differ == {"weight_class", "finish_time_sec"}
-    # So of the 47: all agree on who won, how, in which round, and whether it was a title fight.
-    assert compared - len(differences) >= 41
+    # So of the 58: all agree on who won, how, in which round, and whether it was a title fight.
+    assert compared - len(differences) >= 52
 
 
 def test_the_title_fights_match_the_seed_exactly(comparison):
     """UFC 249: the interim (footnote only) and the defence; UFC 259: three; UFC 321: a vacant title
-    fight and a title fight that ended in a no contest; UFC 323: two."""
+    fight and a title fight that ended in a no contest; UFC 323: two. UFC 244's main event is the
+    BMF belt, which the seed does not count: it must be false here too."""
     pages, _, _ = comparison
     seed = {(f["card"], f["first"], f["second"]): f["seed"] for f in GOLDEN["fights"]}
     titles = {
@@ -91,14 +92,16 @@ def test_the_title_fights_match_the_seed_exactly(comparison):
     }
     seed_titles = {(card, first) for (card, first, _), s in seed.items() if s["is_title_fight"]}
     assert titles >= seed_titles and len(seed_titles) == 9
-    assert titles - seed_titles == set()
+    assert titles - seed_titles == set()  # nothing the seed calls a non-title fight is one here
+    assert ("UFC_244", "Jorge Masvidal") not in titles  # the BMF belt
 
 
-def test_six_bouts_have_a_fighter_spelled_differently_so_a_name_match_alone_would_miss_them(
+def test_seven_bouts_have_a_fighter_named_differently_so_a_name_match_alone_would_miss_them(
     comparison,
 ):
-    """11% of these bouts (6 of 53) have a name that differs from the seed's. They are why a new
-    name is checked against existing fighters before a stub is created."""
+    """11% of these bouts (7 of 65) have a name that differs from the seed's: a hyphen, a nickname,
+    a transliteration, a married name. They are why a new name is checked against existing fighters
+    before a stub is created."""
     pages, _, _ = comparison
     seed_pairs = {(f["card"], f["first"], f["second"]) for f in GOLDEN["fights"]}
     missing = [
@@ -108,4 +111,4 @@ def test_six_bouts_have_a_fighter_spelled_differently_so_a_name_match_alone_woul
         if (card, b.first.name, b.second.name) not in seed_pairs
     ]
     assert sorted(missing) == sorted([m[:3] for m in GOLDEN["unmatched_by_name"]])
-    assert sum(len(p.bouts) for p in pages.values()) == 53
+    assert sum(len(p.bouts) for p in pages.values()) == 65

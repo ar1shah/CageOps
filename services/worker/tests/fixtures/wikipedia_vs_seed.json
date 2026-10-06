@@ -1,6 +1,12 @@
 {
- "about": "What the seed (Kaggle silver, ufcstats results) holds for the same fights as four saved Wikipedia cards, exported from the local database on 2026-10-06. Facts only: winner, outcome, method, decision type, round, time, title flag, weight class, gender.",
+ "about": "What the seed (Kaggle silver, ufcstats results) holds for the same fights as five saved Wikipedia cards, exported from the local database on 2026-10-06. Facts only: winner, outcome, method, decision type, round, time, title flag, weight class, gender.",
  "unmatched_by_name": [
+  [
+   "UFC_244",
+   "Katlyn Chookagian",
+   "Jennifer Maia",
+   "Katlyn Cerminara"
+  ],
   [
    "UFC_249",
    "Alexey Oleynik",
@@ -39,6 +45,182 @@
   ]
  ],
  "fights": [
+  {
+   "card": "UFC_244",
+   "first": "Jorge Masvidal",
+   "second": "Nate Diaz",
+   "seed": {
+    "outcome": "win",
+    "winner": "jorge masvidal",
+    "method": "ko_tko",
+    "decision_type": null,
+    "finish_round": 3,
+    "finish_time_sec": 300,
+    "is_title_fight": false,
+    "weight_class": "Welterweight",
+    "gender": "M"
+   }
+  },
+  {
+   "card": "UFC_244",
+   "first": "Darren Till",
+   "second": "Kelvin Gastelum",
+   "seed": {
+    "outcome": "win",
+    "winner": "darren till",
+    "method": "decision",
+    "decision_type": "split",
+    "finish_round": 3,
+    "finish_time_sec": 300,
+    "is_title_fight": false,
+    "weight_class": "Middleweight",
+    "gender": "M"
+   }
+  },
+  {
+   "card": "UFC_244",
+   "first": "Stephen Thompson",
+   "second": "Vicente Luque",
+   "seed": {
+    "outcome": "win",
+    "winner": "stephen thompson",
+    "method": "decision",
+    "decision_type": "unanimous",
+    "finish_round": 3,
+    "finish_time_sec": 300,
+    "is_title_fight": false,
+    "weight_class": "Welterweight",
+    "gender": "M"
+   }
+  },
+  {
+   "card": "UFC_244",
+   "first": "Derrick Lewis",
+   "second": "Blagoy Ivanov",
+   "seed": {
+    "outcome": "win",
+    "winner": "derrick lewis",
+    "method": "decision",
+    "decision_type": "split",
+    "finish_round": 3,
+    "finish_time_sec": 300,
+    "is_title_fight": false,
+    "weight_class": "Heavyweight",
+    "gender": "M"
+   }
+  },
+  {
+   "card": "UFC_244",
+   "first": "Kevin Lee",
+   "second": "Gregor Gillespie",
+   "seed": {
+    "outcome": "win",
+    "winner": "kevin lee",
+    "method": "ko_tko",
+    "decision_type": null,
+    "finish_round": 1,
+    "finish_time_sec": 167,
+    "is_title_fight": false,
+    "weight_class": "Lightweight",
+    "gender": "M"
+   }
+  },
+  {
+   "card": "UFC_244",
+   "first": "Corey Anderson",
+   "second": "Johnny Walker",
+   "seed": {
+    "outcome": "win",
+    "winner": "corey anderson",
+    "method": "ko_tko",
+    "decision_type": null,
+    "finish_round": 1,
+    "finish_time_sec": 127,
+    "is_title_fight": false,
+    "weight_class": "Light Heavyweight",
+    "gender": "M"
+   }
+  },
+  {
+   "card": "UFC_244",
+   "first": "Shane Burgos",
+   "second": "Makwan Amirkhani",
+   "seed": {
+    "outcome": "win",
+    "winner": "shane burgos",
+    "method": "ko_tko",
+    "decision_type": null,
+    "finish_round": 3,
+    "finish_time_sec": 272,
+    "is_title_fight": false,
+    "weight_class": "Featherweight",
+    "gender": "M"
+   }
+  },
+  {
+   "card": "UFC_244",
+   "first": "Edmen Shahbazyan",
+   "second": "Brad Tavares",
+   "seed": {
+    "outcome": "win",
+    "winner": "edmen shahbazyan",
+    "method": "ko_tko",
+    "decision_type": null,
+    "finish_round": 1,
+    "finish_time_sec": 147,
+    "is_title_fight": false,
+    "weight_class": "Middleweight",
+    "gender": "M"
+   }
+  },
+  {
+   "card": "UFC_244",
+   "first": "Jairzinho Rozenstruik",
+   "second": "Andrei Arlovski",
+   "seed": {
+    "outcome": "win",
+    "winner": "jairzinho rozenstruik",
+    "method": "ko_tko",
+    "decision_type": null,
+    "finish_round": 1,
+    "finish_time_sec": 29,
+    "is_title_fight": false,
+    "weight_class": "Heavyweight",
+    "gender": "M"
+   }
+  },
+  {
+   "card": "UFC_244",
+   "first": "Lyman Good",
+   "second": "Chance Rencountre",
+   "seed": {
+    "outcome": "win",
+    "winner": "lyman good",
+    "method": "ko_tko",
+    "decision_type": null,
+    "finish_round": 3,
+    "finish_time_sec": 123,
+    "is_title_fight": false,
+    "weight_class": "Welterweight",
+    "gender": "M"
+   }
+  },
+  {
+   "card": "UFC_244",
+   "first": "Hakeem Dawodu",
+   "second": "Julio Arce",
+   "seed": {
+    "outcome": "win",
+    "winner": "hakeem dawodu",
+    "method": "decision",
+    "decision_type": "split",
+    "finish_round": 3,
+    "finish_time_sec": 300,
+    "is_title_fight": false,
+    "weight_class": "Featherweight",
+    "gender": "M"
+   }
+  },
   {
    "card": "UFC_249",
    "first": "Justin Gaethje",

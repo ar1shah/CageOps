@@ -19,6 +19,7 @@ parsers in `services/scraper/src/cageops_scraper/parsers/wikipedia_*.py`.
 | `UFC_323.html` | [UFC 323](https://en.wikipedia.org/wiki/UFC_323) | 80893887 | [1345983795](https://en.wikipedia.org/w/index.php?title=UFC_323&oldid=1345983795) |
 | `UFC_321.html` | [UFC 321](https://en.wikipedia.org/wiki/UFC_321) | 80330203 | [1374969661](https://en.wikipedia.org/w/index.php?title=UFC_321&oldid=1374969661) |
 | `UFC_259.html` | [UFC 259](https://en.wikipedia.org/wiki/UFC_259) | 65611436 | [1370512355](https://en.wikipedia.org/w/index.php?title=UFC_259&oldid=1370512355) |
+| `UFC_244.html` | [UFC 244](https://en.wikipedia.org/wiki/UFC_244) | 60744212 | [1345997506](https://en.wikipedia.org/w/index.php?title=UFC_244&oldid=1345997506) |
 | `UFC_249.html` | [UFC 249](https://en.wikipedia.org/wiki/UFC_249) | 62581056 | [1336221891](https://en.wikipedia.org/w/index.php?title=UFC_249&oldid=1336221891) |
 
 ## What was changed

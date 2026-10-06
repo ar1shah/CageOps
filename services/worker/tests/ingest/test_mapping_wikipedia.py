@@ -4,7 +4,6 @@ import dataclasses
 
 import pytest
 
-from cageops_scraper.parsers.wikipedia_models import WikiBout, WikiFighter
 from cageops_worker.ingest.errors import MappingError
 from cageops_worker.ingest.mapping_wikipedia import (
     DuplicateIndex,
@@ -152,22 +151,14 @@ def test_vacant_defences_and_title_no_contests_count_too(wiki_page):
     assert sum(map_bout(b).is_title_fight for b in page.bouts) == 3  # the seed says 3
 
 
-def test_the_bmf_belt_is_not_a_title_fight_because_the_seed_says_so():
+def test_the_bmf_belt_is_not_a_title_fight_because_the_seed_says_so(wiki_page):
     """UFC 244's main event (Masvidal vs. Diaz, the BMF title) is is_title_fight = false in the
-    seed, so a BMF footnote must map to false."""
-    bmf = WikiBout(
-        weight_class_raw="Welterweight",
-        first=WikiFighter(
-            name="Jorge Masvidal", link_title="Jorge_Masvidal", champion_marker=False
-        ),
-        second=WikiFighter(name="Nate Diaz", link_title="Nate_Diaz", champion_marker=False),
-        versus="def.",
-        method_raw="TKO (doctor stoppage)",
-        round=3,
-        time_raw="5:00",
-        note_kind="bmf",
-    )
-    assert map_bout(bmf).is_title_fight is False
+    seed, so its BMF footnote must map to false, and nothing else on that card is a title fight."""
+    page = wiki_page("UFC_244")
+    main_event = next(b for b in page.bouts if "Masvidal" in b.first.name)
+    assert main_event.note_kind == "bmf"
+    assert map_bout(main_event).is_title_fight is False
+    assert not any(map_bout(b).is_title_fight for b in page.bouts)
 
 
 # -- impossible combinations ----------------------------------------------------------------------
