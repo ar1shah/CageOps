@@ -88,6 +88,7 @@ ufcstats.com put every content page behind a bot challenge on 2026-10-03, and we
 - Research first: the Wikipedia / MediaWiki API terms (rate limits, User-Agent policy, CC BY-SA attribution) and any alternatives; log what was checked and when in DATA_SOURCES.md and DECISIONS.md.
 - Add it as a new `Source` in the Phase 1b fetcher (same queue, cache, rate limiter, DLQ). Expect results, method, round and time, but probably no per-round stats; store what it has and leave stats NULL.
 - If the ufcstats operator grants access in the meantime, re-run the 1b backfill against the live site instead.
+- **Built 2026-10-06:** English Wikipedia event articles (D-028), stored with per-source keys and per-field precedence (D-029); the operator replied that scraping is fine but they cannot control the challenge (D-025). The gap (18 events, 224 fights) is loaded. Still open: an allowlist or export from the operator, and the step that merges Wikipedia-created rows with ufcstats' if access returns.
 
 ### Done when
 - [ ] Seed data loaded; row counts documented; loader reruns cleanly

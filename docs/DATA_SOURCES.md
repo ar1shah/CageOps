@@ -11,6 +11,7 @@ _Researched: 2026-10-01. Re-verify anything marked **[UNVERIFIED]** before relyi
 | Kaggle: `mdabbert` Ultimate UFC | Closing odds + rankings for the betting-favorite baseline | Download, CC BY 4.0 | No per-round stats; license differs between Kaggle and GitHub |
 | Kaggle: `martj42` rankings | Historical rankings (2013+) | Download, CC0 | Rankings are media votes, weekly-ish |
 | ESPN MMA endpoints | **Do not use** | Undocumented JSON | Disney Terms of Use explicitly ban scraping and ML use |
+| English Wikipedia (event articles) | Results for the June-to-October 2026 gap (Phase 1d): winner, method, round, time, no stats | Public HTML under `/wiki/`, CC BY-SA 4.0 | Anyone can edit it; fighter names differ from ufcstats' (11% of bouts on five cards) |
 | News RSS (Sherdog, MMA News, Cageside Press) | Phase 4 RAG corpus | Public RSS | Site terms restrict copying/aggregation; store excerpts + links only |
 
 ---
@@ -222,6 +223,7 @@ _Not legal advice. These are the risks a reviewer or interviewer is likely to ra
 | **Server load** | Small sites can be hurt by aggressive scraping; Sherdog's terms tie automation limits to human-like request rates ([Sherdog Terms](https://www.sherdog.com/terms-of-use)) | Global ~1 req/s limit in Redis, raw-HTML cache, honor `Crawl-delay`, descriptive User-Agent with contact URL |
 | **Trademark / affiliation** | "UFC" belongs to a TKO Group Holdings subsidiary ([Wikipedia: TKO Group Holdings](https://en.wikipedia.org/wiki/TKO_Group_Holdings)) | No UFC logos; name is "CageOps"; explicit non-affiliation disclaimer |
 | **Dataset licensing** | Kaggle licenses are uploader-declared and may not match the upstream source; mdabbert's Kaggle (CC BY 4.0) and GitHub (Apache-2.0) labels differ | Attribute every dataset; don't commit raw data to the public repo (already gitignored); link to Kaggle instead |
+| **Share-alike text** | Wikipedia's text is CC BY-SA 4.0: reusers must credit and share alike ([Terms of Use](https://foundation.wikimedia.org/wiki/Policy:Terms_of_Use)) | Stored rows are facts only (no notes or other prose); credit each article by URL (section 6); the cached HTML and the fixtures are CC BY-SA and say so (NOTICE); settle the share-alike question before publishing data |
 | **Gambling harm** | A win-probability site can look like a tipster service | No odds-derived picks, no "value bet" language, no sportsbook links, show calibration and uncertainty; CLAUDE.md rule 4 |
 | **Personal data** | Fighter DOB, nationality, and news about fighters' lives are personal data | Use only what's needed for features (age at fight date); no social media; honor removal requests |
 | **Data accuracy** | Wrong predictions about real people | Model card on /model page; show model version and date on every prediction |
@@ -274,6 +276,47 @@ Notes on the disclaimer:
 - Set your scraper's User-Agent to something like `CageOps/0.1 (+https://github.com/<you>/cageops; <contact-email>)` so site operators can reach you.
 
 ---
+
+## 6. English Wikipedia (Phase 1d, checked 2026-10-06)
+
+_Not legal advice._ Added because ufcstats.com is behind a bot challenge we do not bypass (D-013, D-025) and our seed ends 2026-05-16. Decisions: D-028 (the source) and D-029 (how its rows are stored).
+
+### 6.1 What was checked, and what it said
+
+| What | Finding |
+|---|---|
+| `robots.txt` (en.wikipedia.org), read 2026-10-06 and re-read by our own fetcher at the first run | For a generic agent: `Disallow: /w/` (this covers `/w/api.php`; only `action=mobileview` is allowed), `Disallow: /api/`, `Disallow: /wiki/Special:`, `Disallow: /trap/`. **No Crawl-delay.** Plain `/wiki/<Title>` pages are allowed. |
+| [API:Etiquette](https://www.mediawiki.org/wiki/API:Etiquette) | No hard limit on reads; requests in series are "a safe request rate"; a meaningful User-Agent is required or the IP may be blocked without notice. |
+| [User-Agent policy](https://foundation.wikimedia.org/wiki/Policy:Wikimedia_Foundation_User-Agent_Policy) | `client/version (contact info) library/version`; the contact is mandatory. Ours: `CageOps/0.1 (+https://github.com/ar1shah/cageops; <contact>)`. |
+| [Robot policy](https://wikitech.wikimedia.org/wiki/Robot_policy) | Website: at most 10 concurrent requests, under 20 per second. Action API unauthenticated: 1 concurrent, 5 per second, and "if a request takes more than 1 second to serve, wait 5 seconds". Our limit is 1 request/second shared by every worker. |
+| [Terms of Use](https://foundation.wikimedia.org/wiki/Policy:Terms_of_Use) | Text is CC BY-SA 4.0 (and GFDL); reusers credit by hyperlink or URL to the article; abusive or disruptive automation is prohibited. |
+| Alternatives not chosen | Paid APIs (Sportradar, UFCalendar and similar): licence and cost. ufc.com's undocumented endpoint: no terms to rely on. Sherdog and Tapology: restrictions not checked, and not needed. |
+
+We use only `/wiki/<Title>` pages. The Action API is the channel Wikimedia's policy sanctions for bots, but robots.txt disallows it, so using it would need a deliberate exception to our rule 2. `WikipediaSource.canonical_url` refuses anything that is not an article page.
+
+### 6.2 What the pages contain (verified on seven saved articles and the 2026 list)
+
+- `2026 in UFC`: a "Past events" table (`#`, Event, Date, Venue, City, Country, Attendance, ...) with a link to each event's article. Numbered events have a second row for the bonus winners. Fight Night links use `UFC_Fight_Night_<n>`, which Wikipedia serves as the article whose real title is the matchup.
+- An event article: an infobox (name, an ISO date inside the Date cell) and one "Results" table with 8 columns: weight class, winner, `def.` or `vs.`, loser, method, round, time, notes. The page's inline config carries `wgArticleId` and `wgRevisionId`.
+- Method text uses `TKO (punches)`, `KO (punch)`, `Submission (...)`, `Technical Submission (...)`, `Decision (unanimous) (30-27, ...)`, `Draw (majority) (...)`, `NC (accidental eye poke)`, `DQ (illegal knee)`. A draw or no contest uses `vs.`.
+- A title fight is not marked in the weight-class cell. It is a footnote on the row ("For the UFC Bantamweight Championship", "For the interim ...", "For the vacant ...") and usually a `(c)` after the champion, who can be on the losing side. An interim bout has no `(c)`. The BMF belt reads "For the UFC BMF Championship". Other footnotes (point deductions) are not title notes.
+- No per-round or strike statistics, no referee, no time format, no scheduled rounds.
+
+### 6.3 How well it agrees with the seed
+
+Five saved cards (UFC 244, 249, 259, 321, 323), 65 bouts, compared bout by bout with what the seed holds (the test is `test_wikipedia_vs_seed.py`):
+
+- 58 bouts match by fighter name, and on those **every outcome, winner, method, decision type, round, title flag and gender is identical**. That includes both UFC 249 title fights (one interim, no marker), three at UFC 259, a vacant title fight and a title fight that ended in a no contest at UFC 321, two at UFC 323, and UFC 244's BMF bout (false in both).
+- Expected differences, all pinned: 5 catch-weight bouts, where ufcstats files the nominal division and Wikipedia says catchweight; 1 finish time (47 s in the seed, 40 s on Wikipedia, UFC 259).
+- **7 of 65 bouts have a fighter named differently from the seed's** (a hyphen, a nickname, an extra surname, a transliteration, a married name). This is the main risk of the source: D-029 holds such names for review.
+
+### 6.4 The gap run (2026-10-06)
+
+Run `bce0669e7531`, `backfill --since 2026-05-17`: 18 events (UFC Fight Night 277 on 2026-05-30 through UFC 332 on 2026-10-03), 224 bouts, and every event's stored bout count equals its article's. 105 KO/TKO, 74 decisions, 43 submissions, 1 no contest, 1 DQ; 6 title fights; every bout has a round and a time. 21 names were held for review: 18 were existing fighters (reviewed alias rows in `seed/aliases.csv`, source `wikipedia`) and 3 were new (`ingest/wikipedia_distinct_fighters.csv`). 74 fighters were created without a ufcstats id. The seed's 8,555 fights are untouched. The requests and revisions read are in the D-013 log.
+
+### 6.5 Attribution
+
+Results for fights dated 2026-05-17 and later come from English Wikipedia, text under CC BY-SA 4.0. Credit is by article URL (`https://en.wikipedia.org/wiki/<Title>`); each event's article id is stored on its `events` row (`wikipedia_article_id`) and the revision read is in the D-013 log. Stored rows are facts only. The raw HTML cache and `services/scraper/tests/fixtures/wikipedia/` hold whole articles and are CC BY-SA 4.0 (see that directory's NOTICE), not covered by the repository's licence.
 
 ## Silver Parquet findings (verified 2026-10-02)
 
@@ -348,3 +391,4 @@ Upcoming bouts (an event page with no results yet) carry the fighters and weight
 - [ ] Confirm MMA Fighting / MMA Junkie feed URLs and terms manually, or leave them out.
 - [ ] Phase 1b: find a live rankings source for upcoming fights (martj42 ends 2026-06-02).
 - [x] Settle how to reach ufcstats given the browser check above: we don't bypass it. Build against fixtures and a replay server, ask the operator for access, and add a permitted results source in Phase 1d (D-013, 2026-10-03).
+- [x] Phase 1d: add a results source that permits automated access: English Wikipedia article pages, built and run 2026-10-06 (section 6, D-028, D-029). Still open: a User-Agent allowlist or data export from the ufcstats operator (D-025).
