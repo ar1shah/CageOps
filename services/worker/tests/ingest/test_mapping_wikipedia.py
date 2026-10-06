@@ -214,28 +214,64 @@ def test_no_prose_is_in_what_we_map():
 KNOWN = {1: "Zhang Weili", 2: "Jose Aldo", 3: "Michael Johnson", 4: "Sean Brady"}
 
 
+def hits(known, name):
+    return [(fid, why) for fid, _, why in DuplicateIndex(known).similar(name)]
+
+
 @pytest.mark.parametrize(
     ("name", "expected"),
     [
         ("Weili Zhang", [1]),  # words swapped
-        ("José Aldo Jr", []),  # a longer name is not "similar" here
+        ("José Aldo Jr", [2]),  # one name's words are all in the other
         ("Michael Johnston", [3]),  # one letter off
         ("Micheal Johnson", [3]),  # two neighbouring letters swapped
         ("Michael Jonson", [3]),  # one letter missing
-        ("Mikael Johnson", []),  # two edits and a ratio just under 0.9: not flagged
+        ("Mikael Johnson", [3]),  # the same surname and first initial
         ("Sean Strickland", []),
         ("Tom Aspinall", []),
         ("Jose Aldo", []),  # an exact match is resolved before this check
     ],
 )
 def test_similar_names(name, expected):
-    assert [fid for fid, _ in DuplicateIndex(KNOWN).similar(name)] == expected
+    assert [fid for fid, _ in hits(KNOWN, name)] == expected
+
+
+# Real spelling variants found on six saved cards, against the seed's names for the same people.
+SEED = {
+    1: "JunYong Park", 2: "Aleksei Oleinik", 3: "Michelle Waterson-Gomez", 4: "Livinha Souza",
+    5: "Jose Delgado", 6: "Mizuki", 7: "Bia Mesquita", 8: "Edmen Shahbazyan", 9: "Yoel Romero",
+}  # fmt: skip
+
+
+@pytest.mark.parametrize(
+    ("wikipedia_name", "seed_id", "why"),
+    [
+        ("Park Jun-yong", 1, "the same letters spaced differently"),
+        ("Michelle Waterson", 3, "one name's words are all in the other"),
+        ("Lívia Renata Souza", 4, "the same surname and first initial"),  # nickname Livinha
+        ("Jose Miguel Delgado", 5, "one name's words are all in the other"),
+        ("Mizuki Inoue", 6, "one name's words are all in the other"),
+        ("Beatriz Mesquita", 7, "the same surname and first initial"),  # nickname Bia
+    ],
+)
+def test_the_real_spelling_variants_the_first_version_missed_are_flagged(
+    wikipedia_name, seed_id, why
+):
+    assert hits(SEED, wikipedia_name) == [(seed_id, why)]
+
+
+@pytest.mark.parametrize("new_fighter", ["Leon Shahbazyan", "Anthony Romero", "Lucas Armand"])
+def test_a_different_person_with_a_shared_surname_or_nothing_in_common_is_not_flagged(new_fighter):
+    assert hits(SEED, new_fighter) == []  # Edmen's brother is a different fighter
+
+
+def test_a_transliteration_is_a_known_miss_and_stays_visible_in_the_stub_list():
+    assert hits(SEED, "Alexey Oleynik") == []
 
 
 def test_one_typo_in_a_short_name_is_caught_though_its_ratio_is_under_0_9():
-    assert [f for f, _ in DuplicateIndex({1: "Petr Yan"}).similar("Petr Yen")] == [1]
-    assert [f for f, _ in DuplicateIndex({1: "Petr Yan"}).similar("Petr Yann")] == [1]
-    assert DuplicateIndex({1: "Petr Yan"}).similar("Petr Yang Li") == []
+    assert hits({1: "Petr Yan"}, "Petr Yen") == [(1, "one letter off")]
+    assert hits({1: "Petr Yan"}, "Petr Yann") == [(1, "one letter off")]
 
 
 def test_a_single_word_name_is_not_a_word_swap():

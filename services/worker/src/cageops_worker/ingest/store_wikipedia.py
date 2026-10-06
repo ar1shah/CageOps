@@ -94,7 +94,7 @@ def _resolve_fighter(
     if key not in distinct:
         similar = index.similar(fighter.name)
         if similar:
-            candidates = ", ".join(f"{name} (id {fid})" for fid, name in similar[:3])
+            candidates = ", ".join(f"{name} (id {fid}: {why})" for fid, name, why in similar[:3])
             raise MappingError(
                 f"suspect duplicate fighter {where}: no exact match, but it looks like "
                 f"{candidates}. If it is one of them, add an alias row; if it is a new fighter, "

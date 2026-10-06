@@ -143,30 +143,56 @@ def _within_one_edit(a: str, b: str) -> bool:
 
 
 class DuplicateIndex:
-    """Finds existing fighters a new name might really be: the same words in another order
-    ("Zhang Weili" / "Weili Zhang"), one typo, or a similarity of 0.9 or more."""
+    """Finds existing fighters a new name might really be. A new name that matches nobody exactly
+    is held for review if it looks like an existing fighter by any of these rules (measured on six
+    real cards: of 17 unmatched names, 7 were old fighters; these rules catch 6 and flag none of
+    the 10 genuinely new ones):
+
+    - the same words in another order ("Zhang Weili" / "Weili Zhang")
+    - the same letters, however spaced or hyphenated ("Park Jun-yong" / "JunYong Park")
+    - one typo, or a similarity of 0.9 or more
+    - one name's words are all in the other ("Michelle Waterson" / "Michelle Waterson-Gomez",
+      "Mizuki Inoue" / "Mizuki")
+    - the same surname and first initial ("Beatriz Mesquita" / "Bia Mesquita")
+
+    A different fighter with the same surname and another initial is not flagged. A transliteration
+    ("Alexey Oleynik" / "Aleksei Oleinik") is not caught: it shows in the run's stub list.
+    """
 
     def __init__(self, fighters: dict[int, str]):
         self._normalized = {fid: normalize_name(name) for fid, name in fighters.items()}
         self._names = fighters
 
-    def similar(self, name: str) -> list[tuple[int, str]]:
+    def similar(self, name: str) -> list[tuple[int, str, str]]:
+        """(fighter id, their name, why it looks the same) for each existing fighter it might be."""
         key = normalize_name(name)
-        words = sorted(key.split())
         found = []
         for fid, other in self._normalized.items():
             if other == key:
-                continue  # an exact match is resolved before we get here
-            if len(words) > 1 and sorted(other.split()) == words:
-                found.append((fid, self._names[fid]))
-                continue
-            if _within_one_edit(key, other):
-                found.append((fid, self._names[fid]))
-                continue
-            matcher = SequenceMatcher(None, key, other)
-            if matcher.real_quick_ratio() >= SIMILAR_NAME and matcher.ratio() >= SIMILAR_NAME:
-                found.append((fid, self._names[fid]))
+                continue  # an exact match is resolved before this check
+            if reason := _why_similar(key, other):
+                found.append((fid, self._names[fid], reason))
         return found
+
+
+def _why_similar(key: str, other: str) -> str | None:
+    words, other_words = key.split(), other.split()
+    if not words or not other_words:
+        return None
+    if len(words) > 1 and sorted(words) == sorted(other_words):
+        return "the same words in another order"
+    if sorted(key.replace(" ", "")) == sorted(other.replace(" ", "")):
+        return "the same letters spaced differently"
+    if _within_one_edit(key, other):
+        return "one letter off"
+    if set(words) <= set(other_words) or set(other_words) <= set(words):
+        return "one name's words are all in the other"
+    if words[-1] == other_words[-1] and words[0][0] == other_words[0][0]:
+        return "the same surname and first initial"
+    matcher = SequenceMatcher(None, key, other)
+    if matcher.real_quick_ratio() >= SIMILAR_NAME and matcher.ratio() >= SIMILAR_NAME:
+        return "a very similar spelling"
+    return None
 
 
 def load_distinct_titles(path: Path = DISTINCT_FIGHTERS_CSV) -> frozenset[str]:
