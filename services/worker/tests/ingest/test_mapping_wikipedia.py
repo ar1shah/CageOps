@@ -273,4 +273,15 @@ def test_the_distinct_fighters_file_is_read(tmp_path):
     path = tmp_path / "distinct.csv"
     path.write_text("link_title,reason\nMichael_Johnston,different person\n")
     assert load_distinct_titles(path) == frozenset({"Michael_Johnston"})
-    assert load_distinct_titles() == frozenset()  # the committed file starts empty
+
+
+def test_the_committed_distinct_fighters_file_holds_only_reviewed_entries_with_a_reason():
+    import csv
+
+    from cageops_worker.ingest.mapping_wikipedia import DISTINCT_FIGHTERS_CSV
+
+    with DISTINCT_FIGHTERS_CSV.open(newline="", encoding="utf-8") as handle:
+        rows = list(csv.DictReader(handle))
+    assert {r["link_title"] for r in rows} == load_distinct_titles()
+    assert all(r["reason"].strip() for r in rows)  # every confirmation says why
+    assert len({r["link_title"] for r in rows}) == len(rows)

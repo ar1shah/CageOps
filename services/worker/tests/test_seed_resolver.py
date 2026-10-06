@@ -106,7 +106,7 @@ def test_committed_aliases_file_is_well_formed():
     keys = [(r["source"], normalize_name(r["alias"])) for r in rows]
     assert len(keys) == len(set(keys)), "duplicate (source, alias)"
     for row in rows:
-        assert row["source"] in {"mdabbert", "jerzyszocik", "martj42"}
+        assert row["source"] in {"mdabbert", "jerzyszocik", "martj42", "wikipedia"}
         assert row["alias"] == row["alias"].strip() and row["alias"]
         assert re.fullmatch(r"[0-9a-f]{16}", row["ufcstats_id"])
 

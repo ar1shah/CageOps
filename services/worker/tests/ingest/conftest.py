@@ -222,12 +222,3 @@ def wiki_page(wiki_html):
     from cageops_scraper.parsers.wikipedia_event import parse_event as parse_wiki_event
 
     return lambda name: parse_wiki_event(wiki_html(name), "https://en.wikipedia.org/wiki/" + name)
-
-
-@pytest.fixture(autouse=True)
-def no_alias_file_unless_a_test_asks(tmp_path, monkeypatch):
-    """The committed alias file points at seed fighters the empty test database doesn't have, so the
-    Wikipedia writer reads no alias file unless a test supplies one."""
-    monkeypatch.setattr(
-        "cageops_worker.ingest.store_wikipedia.ALIASES_CSV", tmp_path / "no_such_aliases.csv"
-    )
