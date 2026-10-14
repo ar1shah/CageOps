@@ -18,6 +18,7 @@ EXPECTED_TABLES = {
     "fighters",
     "fights",
     "load_runs",
+    "model_versions",
     "odds",
     "rankings",
     "raw_pages",

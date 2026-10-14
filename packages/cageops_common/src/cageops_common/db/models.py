@@ -29,6 +29,7 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
     func,
+    text,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
@@ -387,3 +388,38 @@ class FightFeatures(Base):
 
     built_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     load_run_id: Mapped[int] = mapped_column(ForeignKey("load_runs.id"))
+
+
+class ModelVersion(Base):
+    """One trained, evaluated model bundle (win/loss + method together). The registry (D-033).
+
+    A version is registered inactive; `is_active` is switched explicitly. At most one row can be
+    active, and the database enforces it with a partial unique index, not the application.
+    """
+
+    __tablename__ = "model_versions"
+    __table_args__ = (
+        Index(
+            "uq_model_versions_one_active",
+            "is_active",
+            unique=True,
+            postgresql_where=text("is_active"),
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    version: Mapped[str] = mapped_column(Text, unique=True)
+    trained_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    # The last event date the model was FIT on (the end of its training split): it knows nothing
+    # at or after this date. The last event date of the whole dataset it saw is in `config`
+    # as `dataset_last_event`.
+    data_cutoff: Mapped[date] = mapped_column(Date)
+    # `output_sha256` of the fight_features build it was trained on (load_runs.sha256).
+    features_output_sha256: Mapped[str] = mapped_column(String(64))
+    features_load_run_id: Mapped[int] = mapped_column(ForeignKey("load_runs.id"))
+    metrics: Mapped[dict] = mapped_column(JSONB)
+    # Everything needed to reproduce the version: seed, split boundaries and counts, feature
+    # lists and vocabularies, parameters, library versions, artifact checksums.
+    config: Mapped[dict] = mapped_column(JSONB)
+    artifact_path: Mapped[str] = mapped_column(Text)
+    is_active: Mapped[bool] = mapped_column(Boolean, server_default="false")
