@@ -195,3 +195,47 @@ Reading it: there is no consistent direction. The lowest bin is more extreme tha
 - Command: `uv run python -m cageops_trainer train`
 - Result: 4.83 s, 4.75 s and 4.76 s wall clock for three consecutive runs (an earlier run took 4.79 s).
 - Notes: includes `uv` and Python start-up, reading 17,558 feature rows and 8,771 fights in one snapshot, fitting three models (win/loss, method, and the ablation model), scoring, the 1,000-resample bootstrap, writing the artifacts and the registry row. LightGBM runs with `num_threads=1` and `deterministic=True` on purpose (D-033), so this is a single-threaded number; it says nothing about other hardware or a larger table. n=3, warm Postgres, no other load.
+
+### Phase 2a: the data counts D-031 and D-032 quote
+- Date: 2026-10-14
+- Hardware: not a timing; counts do not depend on it (the same machine and Postgres as above).
+- Commit: the commit that adds this entry (the database was at features build `load_runs.id` 36, history through 2026-10-03).
+- Command: the query below, run read-only against the dev database: `docker compose exec -T -e PGOPTIONS='-c default_transaction_read_only=on' postgres psql -U cageops -d cageops < query.sql`
+- Result:
+
+| what | value |
+|---|---|
+| completed fights | 8779 |
+| with a decided winner (`outcome = 'win'`) | 8771 |
+| draws / no contests / unknown | 3 / 3 / 2 |
+| DQ wins | 24 |
+| lower-id fighter (A) win share | 0.5014 |
+| red corner win share (fights with a corner) | 0.6419 (8548 fights) |
+| last event with mdabbert odds | 2026-03-28 |
+| winner fights from 2026-05-17 (Wikipedia period) | 223 |
+| train / val / test winner fights (rolling 365 days) | 7706 / 512 / 553 |
+| test fights with mdabbert odds | 241 |
+
+- Notes: these are the numbers the decisions are built on. They move when ingestion adds fights, so a later reader should re-run the query rather than trust the table.
+
+```sql
+WITH lf AS (
+  SELECT f.id, e.event_date, f.outcome, f.method, f.winner_id, f.fighter_a_id, f.red_fighter_id,
+         f.status, f.result_source,
+         EXISTS (SELECT 1 FROM odds o WHERE o.fight_id = f.id AND o.source = 'mdabbert') AS has_odds
+  FROM fights f JOIN events e ON e.id = f.event_id WHERE f.status = 'completed')
+SELECT 'completed fights' AS what, count(*)::text AS value FROM lf
+UNION ALL SELECT 'with a decided winner (outcome=win)', count(*)::text FROM lf WHERE outcome = 'win'
+UNION ALL SELECT 'draws / no contests / unknown', concat_ws(' / ', count(*) FILTER (WHERE outcome='draw'), count(*) FILTER (WHERE outcome='no_contest'), count(*) FILTER (WHERE outcome='unknown')) FROM lf
+UNION ALL SELECT 'DQ wins', count(*)::text FROM lf WHERE outcome = 'win' AND method = 'dq'
+UNION ALL SELECT 'lower-id fighter (A) win share', round(avg((winner_id = fighter_a_id)::int)::numeric, 4)::text FROM lf WHERE outcome = 'win'
+UNION ALL SELECT 'red corner win share (fights with a corner)', round(avg((winner_id = red_fighter_id)::int)::numeric, 4)::text FROM lf WHERE outcome = 'win' AND red_fighter_id IS NOT NULL
+UNION ALL SELECT 'fights with a corner recorded', count(*)::text FROM lf WHERE outcome = 'win' AND red_fighter_id IS NOT NULL
+UNION ALL SELECT 'last event with mdabbert odds', max(event_date)::text FROM lf WHERE has_odds
+UNION ALL SELECT 'winner fights from 2026-05-17 (Wikipedia period)', count(*)::text FROM lf WHERE outcome = 'win' AND event_date >= DATE '2026-05-17'
+UNION ALL SELECT 'train / val / test (rolling 365 d) winner fights',
+  concat_ws(' / ', count(*) FILTER (WHERE event_date < DATE '2024-10-04'),
+                   count(*) FILTER (WHERE event_date >= DATE '2024-10-04' AND event_date < DATE '2025-10-04'),
+                   count(*) FILTER (WHERE event_date >= DATE '2025-10-04')) FROM lf WHERE outcome = 'win'
+UNION ALL SELECT 'test fights with mdabbert odds', count(*)::text FROM lf WHERE outcome = 'win' AND event_date >= DATE '2025-10-04' AND has_odds;
+```
