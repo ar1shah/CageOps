@@ -264,11 +264,29 @@ def _win_slice(
     return block
 
 
+def _pick_stats(data: Dataset, idx: np.ndarray) -> dict[str, object]:
+    """How often the rule's own pick won on these fights, ignoring any fitted probability."""
+    sign = baselines.heuristic_sign(
+        data.rank_a[idx],
+        data.rank_b[idx],
+        data.a_values[idx, baselines.PRIOR_UFC_FIGHTS],
+        data.b_values[idx, baselines.PRIOR_UFC_FIGHTS],
+    )
+    picked = sign != 0
+    won = data.winner_is_a[idx]
+    return {
+        "n_picks": int(picked.sum()),
+        "pick_win_rate": float(((sign[picked] == 1) == won[picked]).mean())
+        if picked.any()
+        else None,
+    }
+
+
 def _fmt(value: float | None, digits: int = 3) -> str:
     return "n/a" if value is None else f"{value:.{digits}f}"
 
 
-def _summary(test: dict[str, Any]) -> list[str]:
+def _summary(test: dict[str, Any], heuristic: dict[str, Any]) -> list[str]:
     """Plain sentences, generated from the numbers, so the report cannot oversell itself."""
     lines = []
     allf = test["all"]
@@ -279,6 +297,19 @@ def _summary(test: dict[str, Any]) -> list[str]:
         f"log loss {allf['heuristic']['log_loss']:.4f}; coin flip log loss "
         f"{allf['coin_flip']['log_loss']:.4f}."
     )
+    train_rate = heuristic["pick_win_rate"]["train"]["pick_win_rate"]
+    test_rate = heuristic["pick_win_rate"]["test"]["pick_win_rate"]
+    if (
+        train_rate is not None
+        and test_rate is not None
+        and (train_rate - 0.5) * (test_rate - 0.5) < 0
+    ):
+        lines.append(
+            f"The experience/ranking rule picked the winner {train_rate:.1%} of the time in "
+            f"training but {test_rate:.1%} on test: its edge reversed, so its probabilities (fit "
+            "on train) score worse than a coin flip. That is a shift in the data, not a "
+            "bug; any feature that carries the same signal (prior_ufc_fights) can be hurt too."
+        )
     odds = allf.get("on_fights_with_odds")
     if odds:
         diff = odds["model_minus_favorite_log_loss"]
@@ -373,6 +404,17 @@ def run_training(
         "calibration": metrics.calibration(data.winner_is_a[splits.val].astype(int), p_val),
     }
 
+    heuristic_info = {
+        "rule": "better division rank if both fighters are ranked (point-in-time view), otherwise "
+        "more prior UFC fights; its probability is the training pick win rate",
+        "fitted_pick_win_rate": heuristic_rate,
+        "pick_win_rate": {
+            "train": _pick_stats(data, splits.train),
+            "val": _pick_stats(data, splits.val),
+            "test": _pick_stats(data, splits.test),
+        },
+    }
+
     # ---- method ----
     method_model, y_train_m, _ = _fit_method(data, splits, seed, schedule=False)
     prior = np.bincount(y_train_m, minlength=len(METHOD_CLASSES)) / len(y_train_m)
@@ -430,10 +472,10 @@ def run_training(
             "val": describe(data.event_date, splits.val),
             "test": describe(data.event_date, splits.test),
         },
-        "win_loss": {"val": val_block, "test": test_block},
+        "win_loss": {"val": val_block, "test": test_block, "heuristic": heuristic_info},
         "method": method_block,
         "ablation": ablation,
-        "summary": _summary(test_block),
+        "summary": _summary(test_block, heuristic_info),
         "caveats": [
             "Odds have no capture time (captured_at is NULL), so they are probably closing "
             "lines: a strong baseline, and not proven to be pre-fight.",

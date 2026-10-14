@@ -258,3 +258,38 @@ def test_boundaries_can_be_overridden_and_are_recorded(lab, tmp_path):
     assert result.metrics["splits"]["boundaries"]["test_start"] == "2023-06-01"
     assert result.metrics["splits"]["val"]["first"] >= "2022-06-01"
     assert np.isfinite(result.metrics["win_loss"]["test"]["all"]["model"]["log_loss"])
+
+
+def test_the_report_gives_the_heuristics_own_pick_win_rate_per_split(trained):
+    heuristic = trained.metrics["win_loss"]["heuristic"]
+
+    assert set(heuristic["pick_win_rate"]) == {"train", "val", "test"}
+    assert heuristic["pick_win_rate"]["train"]["n_picks"] > 0
+    assert 0 <= heuristic["fitted_pick_win_rate"] <= 1
+    assert "rule" in heuristic
+
+
+def test_a_reversed_heuristic_edge_is_said_in_plain_words():
+    from cageops_trainer.train import _summary
+
+    block = {
+        "n": 100,
+        "model": {"accuracy": 0.6, "log_loss": 0.66, "brier": 0.23},
+        "heuristic": {"accuracy": 0.42, "log_loss": 0.71},
+        "coin_flip": {"log_loss": 0.6931},
+    }
+    flipped = {
+        "pick_win_rate": {
+            "train": {"pick_win_rate": 0.54, "n_picks": 900},
+            "test": {"pick_win_rate": 0.42, "n_picks": 90},
+        }
+    }
+    held = {
+        "pick_win_rate": {
+            "train": {"pick_win_rate": 0.54, "n_picks": 900},
+            "test": {"pick_win_rate": 0.55, "n_picks": 90},
+        }
+    }
+
+    assert any("edge reversed" in line for line in _summary({"all": block}, flipped))
+    assert not any("edge reversed" in line for line in _summary({"all": block}, held))
