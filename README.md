@@ -6,14 +6,14 @@ Not affiliated with the UFC. Not betting advice.
 
 ## Status
 
-Phase 0 (scaffold), Phase 1a (seed data), Phase 1b (live ingestion) and Phase 1c (point-in-time features): complete and merged. 1b was tested and benchmarked against a local replay server only; it has never run against the real ufcstats.com, which is behind a bot challenge we do not bypass (see D-013). Phase 1d (a results source that permits automated access): built, not yet merged. English Wikipedia's event articles fill the 2026-05-17 to 2026-10-03 gap (18 events, 224 fights, results only, no per-round stats; D-028, D-029). See [docs/ROADMAP.md](docs/ROADMAP.md).
+Phase 0 (scaffold) and Phase 1 (data pipeline: 1a seed data, 1b live ingestion, 1c point-in-time features, 1d a results source that permits automated access): complete and merged. 1b was tested and benchmarked against a local replay server only; it has never run against the real ufcstats.com, which is behind a bot challenge we do not bypass (see D-013). English Wikipedia's event articles fill the 2026-05-17 to 2026-10-03 gap (18 events, 224 fights, results only, no per-round stats; D-028, D-029). See [docs/ROADMAP.md](docs/ROADMAP.md).
 
 - [x] uv workspace with `cageops_common` and scraper / worker / api / trainer stubs
 - [x] API with a working `/healthz`
 - [x] Local Postgres 16 (pgvector) + Redis 7 via docker compose
 - [x] ruff + pytest, one test per package
 - [x] CI: lint, format, tests, compose validation on every PR (passing on PR #1)
-- [ ] Phase 1: data pipeline
+- [x] Phase 1: data pipeline
   - [x] 1a: schema, Alembic migrations, reproducible seed download with sha256 manifest, idempotent loaders, point-in-time rankings view, tests on real Postgres in CI
   - [x] 1b: live ingestion on Redis + RQ: polite fetcher with a shared rate limiter and raw-page cache, parsers, retries and a dead-letter queue, idempotent upserts, CLI, `/healthz` and `/metrics`, worker-scaling benchmark (replay server only, see [docs/BENCHMARKS.md](docs/BENCHMARKS.md))
   - [x] 1c: point-in-time feature pipeline: `fight_features` (career / last-3 / last-5 rates, streaks, bio), built only from fights strictly before each fight, with leakage tests; rebuild with one command (D-027)
