@@ -186,7 +186,7 @@ Ingestion (worker jobs): pull the news RSS feeds listed in docs/DATA_SOURCES.md,
 
 Retrieval: for a matchup, filter to chunks tagged with either fighter, rank by vector similarity plus recency.
 
-Generation: POST /writeup sends the prediction output plus retrieved chunks to the Anthropic API (claude-haiku-4-5), instructing it to use only the provided sources and cite them; the response includes source URLs. Cache writeups in Redis.
+Generation: POST /writeup sends the prediction output plus retrieved chunks to the Anthropic API (claude-haiku-5-5), instructing it to use only the provided sources and cite them; the response includes source URLs. Cache writeups in Redis.
 
 Put the LLM call behind an LLMClient interface so a self-hosted vLLM server can be swapped in later without touching the endpoint.
 
