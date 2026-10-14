@@ -90,6 +90,9 @@ data/                      local-only raw data (gitignored)
 - `uv run python scripts/minimize_wikipedia_fixture.py data/fixtures/wikipedia/*.html --out services/scraper/tests/fixtures/wikipedia` — shrink saved Wikipedia pages into committable fixtures (CC BY-SA 4.0, see the NOTICE there)
 - `uv run python -m cageops_worker.features rebuild [--today YYYY-MM-DD]` — rebuild `fight_features` (point-in-time, one transaction; prints a JSON report; exits 1 and changes nothing if a check fails)
 - `uv run python -m cageops_worker.features show --fighter "<name>" | --fighter-id N [--json]` — one fighter's feature rows in date order
+- `uv run python -m cageops_trainer train [--seed N] [--val-start D] [--test-start D] [--train-start D] [--out-dir P]` — train, evaluate against the betting favorite and an experience/ranking heuristic, and register a new INACTIVE version (D-031..D-033). Refuses with exit 1 ("run features rebuild") on stale features; warns on newer loads or fetches. Needs migration 0009 and a features rebuild made by the current code
+- `uv run python -m cageops_trainer list [--json]` — registered versions, newest first; `*` marks the active one
+- `uv run python -m cageops_trainer activate VERSION` — make one version the only active one (one transaction; Postgres rejects two)
 
 ## DECISIONS.md entry format
 

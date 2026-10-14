@@ -135,6 +135,12 @@ Endpoints: GET /fighters?search=, GET /fighters/{id}, POST /predict {fighter_a_i
 Then load-test with locust or k6: record p50/p95/p99 latency and requests/sec with a cold vs warm cache in BENCHMARKS.md.
 ```
 
+**Carry-over from 2a (read before starting 2b):**
+- Load the active model from `model_versions` (`is_active`), verify each artifact against `config.artifacts_sha256`, and log `features_output_sha256` at startup. Predict with `WinLossModel.predict` (it averages both fighter orderings, so P(A) + P(B) = 1) and `MethodModel.predict`; the feature vector for a fighter is the same 34 numeric columns plus normalized stance and weight class (`cageops_trainer.features`, and `manifest.json` in the artifact directory).
+- Upcoming bouts: fill `is_title_fight` and `scheduled_rounds` from the upcoming-event data (title fights and main events are known in advance) and write them into `fight_features` for scheduled fights, so Phase 5 can bring them back as features (D-032; measured cost of leaving them out: 0.006 val log loss on the method model).
+- The training staleness guard ignores scheduled bouts, so 2b needs its own check that the features for an upcoming fight are current before predicting it (D-033).
+- The image needs `apt-get install libgomp1` (LightGBM), and the API must not pull in the training code: move the small inference pieces to a shared module rather than importing `cageops_trainer` into the API image.
+
 ### Prompt 2c — first real deploy
 ```
 Phase 2c: first production deploy on a plain VM with docker compose. (We'll migrate to Kubernetes in Phase 6 — doing it in this order is intentional.)

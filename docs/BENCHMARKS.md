@@ -106,3 +106,92 @@ predictions were committed before any run, so the results can contradict them.
   at 500 ms latency 1 worker about 370 s and 4 workers about 95-100 s.
 - D (warm cache, no network): 4 workers 2.5-4x faster than 1, limited by Postgres and the machine, not a limiter.
 - E (rerun on a full database): 0 rows inserted, 0 updated, only unchanged; 0 requests.
+
+### Phase 2a: model quality against the baselines (real data, model version `20261014-225801`)
+- Date: 2026-10-14
+- Hardware: the same machine as below (Intel Core i9-13900KF, WSL2). Not a performance number; quality does not depend on it.
+- Commit: `41faa11`
+- Command: `uv run python -m cageops_worker.features rebuild` then `uv run python -m cageops_trainer train` (seed 42, defaults). The full report is stored in `model_versions.metrics` and printed by `train`.
+- Data: features build `load_runs.id` 36, `output_sha256` `5b23d187c71067b4ac7427ebfbc98c469b9d02dcc47dfddf857e36258a29e468`. The model was fit on the training split only.
+
+**Splits (D-031).** Time-based, never random. Boundaries are dates.
+
+| split | event dates | fights |
+|---|---|---|
+| train | 1994-03-11 to 2024-09-28 | 7,706 |
+| validation | 2024-10-05 to 2025-09-27 | 512 |
+| test | 2025-10-04 to 2026-10-03 | 553 |
+
+**Win/loss, test split (553 fights).** P(fighter A wins), fighters averaged over both orderings.
+
+| | fights | accuracy | log loss | Brier |
+|---|---|---|---|---|
+| model | 553 | 0.591 | 0.6692 | 0.2383 |
+| experience/ranking heuristic | 553 | 0.416 | 0.7077 | 0.2573 |
+| coin flip (0.5) | 553 | n/a | 0.6931 | 0.2500 |
+| **model, only the 241 fights with odds** | 241 | 0.640 | 0.6392 | 0.2241 |
+| **betting favorite, same 241 fights** | 241 | 0.744 | 0.5536 | 0.1863 |
+| heuristic, same 241 fights | 241 | 0.395 | 0.7109 | 0.2589 |
+
+- **Model vs the favorite, on the same 241 fights: the model loses.** Log loss 0.6392 against 0.5536; difference (model minus favorite) +0.0856, 95% paired-bootstrap interval [+0.0473, +0.1222] (1,000 resamples, seed 42). The interval excludes 0. On validation (476 fights with odds) it is the same shape: model 0.6443, favorite 0.5824, difference +0.0618 [+0.0289, +0.0917]. This is the expected result: the odds are likely closing lines (`captured_at` is NULL, so they are not proven pre-fight), and a market price can reflect things the features never see (injuries, camp news, line movement).
+- **Odds coverage: 241 of 553 test fights.** mdabbert odds end 2026-03-28, so none of the 223 fights from 2026-05-17 have odds. The favorite is scored only where odds exist; exactly equal prices (3) are left out of its accuracy.
+- **Against a coin flip** the model gains 0.0240 log loss on the whole test split. Accuracy excludes 20 fights where the model says exactly 0.5 (two fighters with nothing to tell them apart).
+- **The heuristic's edge reversed.** Its pick won 53.8% of 6,598 training fights, 50.0% of 470 validation fights and 41.6% of 503 test fights. Its probabilities were fit on train, so on test it scores worse than a coin flip (0.7077 against 0.6931). The rule's main input, `prior_ufc_fights`, is also a model input.
+
+**Test slices.**
+
+| | fights | accuracy | log loss | Brier |
+|---|---|---|---|---|
+| before 2026-05-17, model | 330 | 0.598 | 0.6566 | 0.2325 |
+| before 2026-05-17, heuristic | 330 | 0.434 | 0.7052 | 0.2560 |
+| from 2026-05-17 (Wikipedia, no stats), model | 223 | 0.580 | 0.6878 | 0.2469 |
+| from 2026-05-17 (Wikipedia, no stats), heuristic | 223 | 0.387 | 0.7114 | 0.2591 |
+
+The fights from 2026-05-17 have no per-round stats, so their fighters' rate features miss their most recent bouts. The model is a little worse there (log loss 0.6878 against 0.6566), but with 223 fights that gap is within noise.
+
+**Validation split (512 fights).**
+
+| | fights | accuracy | log loss | Brier |
+|---|---|---|---|---|
+| model | 512 | 0.633 | 0.6492 | 0.2287 |
+| experience/ranking heuristic | 512 | 0.500 | 0.6959 | 0.2514 |
+| model, the 476 fights with odds | 476 | 0.643 | 0.6443 | 0.2263 |
+| betting favorite, same fights | 476 | 0.686 | 0.5824 | 0.1988 |
+
+**Calibration, test split** (10 equal-count bins of predicted P(A); expected calibration error 0.0647). Each bin holds about 55 fights, so an observed rate moves about 7 points on noise alone.
+
+| bin | fights | predicted range | mean predicted | observed rate |
+|---|---|---|---|---|
+| 1 | 56 | 0.23 to 0.34 | 0.302 | 0.196 |
+| 2 | 56 | 0.34 to 0.40 | 0.372 | 0.429 |
+| 3 | 56 | 0.40 to 0.45 | 0.429 | 0.393 |
+| 4 | 55 | 0.45 to 0.49 | 0.471 | 0.491 |
+| 5 | 55 | 0.49 to 0.52 | 0.503 | 0.636 |
+| 6 | 55 | 0.52 to 0.56 | 0.541 | 0.545 |
+| 7 | 55 | 0.56 to 0.61 | 0.587 | 0.491 |
+| 8 | 55 | 0.61 to 0.64 | 0.622 | 0.636 |
+| 9 | 55 | 0.64 to 0.68 | 0.659 | 0.582 |
+| 10 | 55 | 0.68 to 0.79 | 0.721 | 0.618 |
+
+Reading it: there is no consistent direction. The lowest bin is more extreme than predicted (mean 0.302, observed 0.196) and the highest is less extreme (0.721, observed 0.618). One standard error of an observed rate over 55 fights is about 6.7 points (sqrt(0.25 / 55)), and no bin is more than about 2 standard errors from its prediction. So calibration is not clearly off and not demonstrated either; 553 fights cannot tell. A calibration step (isotonic or Platt) is the obvious next experiment and is not done here.
+
+**Method of victory (ko_tko / submission / decision; DQ excluded).** Fight-level, symmetric in the fighters. Baseline: the training class frequencies (decision 0.465, ko_tko 0.334, submission 0.201).
+
+| | fights | accuracy | log loss | Brier (multiclass) |
+|---|---|---|---|---|
+| validation, model | 512 | 0.541 | 0.9541 | 0.5737 |
+| validation, class prior | 512 | 0.525 | 1.0030 | 0.6046 |
+| test, model | 552 | 0.491 | 1.0187 | 0.6161 |
+| test, class prior | 552 | 0.424 | 1.0520 | 0.6392 |
+
+**Schedule-columns ablation (D-032).** The method model trained once more with `is_title_fight` and `scheduled_rounds` added, scored on validation only (512 fights, every one filled): log loss 0.9481 with them against 0.9541 without, a difference of -0.0060. That is what leaving them out costs.
+
+**What this does and does not show.** One split, 553 test fights, 241 with odds. Differences of a few hundredths of log loss between the model and the heuristic or the coin flip are inside what a different year could change. The single clear result is that the model does not beat the betting favorite.
+
+### Phase 2a: one training run, wall clock
+- Date: 2026-10-14
+- Hardware: Intel Core i9-13900KF (32 logical CPUs), 31 GiB RAM, WSL2 (Linux 6.18.54.1-microsoft-standard-WSL2) on Windows, Python 3.12.14, LightGBM 4.7.0, numpy 2.5.4. Postgres 16 (`pgvector/pgvector:0.8.1-pg16`) in Docker on the same machine.
+- Commit: `41faa11`
+- Command: `uv run python -m cageops_trainer train`
+- Result: 4.83 s, 4.75 s and 4.76 s wall clock for three consecutive runs (an earlier run took 4.79 s).
+- Notes: includes `uv` and Python start-up, reading 17,558 feature rows and 8,771 fights in one snapshot, fitting three models (win/loss, method, and the ablation model), scoring, the 1,000-resample bootstrap, writing the artifacts and the registry row. LightGBM runs with `num_threads=1` and `deterministic=True` on purpose (D-033), so this is a single-threaded number; it says nothing about other hardware or a larger table. n=3, warm Postgres, no other load.

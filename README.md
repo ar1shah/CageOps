@@ -19,6 +19,9 @@ Phase 0 (scaffold) and Phase 1 (data pipeline: 1a seed data, 1b live ingestion, 
   - [x] 1c: point-in-time feature pipeline: `fight_features` (career / last-3 / last-5 rates, streaks, bio), built only from fights strictly before each fight, with leakage tests; rebuild with one command (D-027)
   - [x] 1d: a second results source: English Wikipedia event articles (`/wiki/` pages only, robots-compliant), per-source keys and `result_source` so ufcstats always wins, spelling-variant names held for review; the summer 2026 gap loaded with results only (D-025, D-028, D-029)
 - [ ] Phase 2: model, API, first deploy
+  - [x] 2a: LightGBM win/loss and method models on time-based splits, scored against the betting favorite and an experience/ranking heuristic (the model **loses to the favorite**, see [docs/BENCHMARKS.md](docs/BENCHMARKS.md)), versions in a Postgres registry with one active version enforced by the database, training refuses stale features (D-031, D-032, D-033)
+  - [ ] 2b: prediction API
+  - [ ] 2c: first deploy
 - [ ] Phase 3: frontend
 - [ ] Phase 4: RAG writeups
 - [ ] Phase 5: retraining + grading loop
@@ -28,7 +31,7 @@ Phase 0 (scaffold) and Phase 1 (data pipeline: 1a seed data, 1b live ingestion, 
 
 Seed data: 8,555 fights, 774 events, 2,686 fighters, 40,244 per-round stat rows, plus odds and rankings from named sources. Counts and file hashes are in [docs/DATA_SOURCES.md](docs/DATA_SOURCES.md). Odds from the "Ultimate UFC Dataset" by Matt Dabbert are used under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) (converted from American to decimal odds and matched to fights), as a betting-favorite baseline only and never as model features.
 
-Known gaps (intentional, scheduled later): the API has no `/metrics` endpoint yet (Phase 2b; the ingestion worker has one), no service Dockerfiles yet (Phase 2b), no per-round stats for fights after 2026-05-16 until the ufcstats operator can let us past the bot challenge (D-025); those fights come from Wikipedia and count in a fighter's history but not in the rate features. If ufcstats access returns, an adoption step is still needed to merge Wikipedia-created rows with ufcstats' (D-029).
+Known gaps (intentional, scheduled later): the API has no `/metrics` endpoint yet (Phase 2b; the ingestion worker has one), no service Dockerfiles yet (Phase 2b; the trainer's image will need `libgomp1` for LightGBM), `is_title_fight` and `scheduled_rounds` are not model features until upcoming bouts get them (D-032), no per-round stats for fights after 2026-05-16 until the ufcstats operator can let us past the bot challenge (D-025); those fights come from Wikipedia and count in a fighter's history but not in the rate features. If ufcstats access returns, an adoption step is still needed to merge Wikipedia-created rows with ufcstats' (D-029).
 
 ## Quickstart
 
