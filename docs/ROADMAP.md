@@ -151,7 +151,7 @@ Show me every command before running it. Write the whole process as a runbook in
 ```
 
 ### Done when
-- [ ] Model metrics vs both baselines documented honestly
+- [x] Model metrics vs both baselines documented honestly (2a: docs/BENCHMARKS.md; the model loses to the favorite)
 - [ ] `https://api.cageops.ar13.dev/docs` is live
 - [ ] Load-test numbers (cold and warm cache) in BENCHMARKS.md
 - [ ] RUNBOOK.md can rebuild the server from scratch
