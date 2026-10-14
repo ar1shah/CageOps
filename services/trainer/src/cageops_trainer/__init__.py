@@ -1,1 +1,1 @@
-"""Model training, evaluation, registry, backtests. Real code arrives in Phase 2a."""
+"""Model training, evaluation and the model registry (Phase 2a)."""
