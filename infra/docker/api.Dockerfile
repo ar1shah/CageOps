@@ -60,9 +60,14 @@ RUN groupadd --system --gid 10001 app \
 
 COPY --from=builder /app/.venv /app/.venv
 
+# OMP_NUM_THREADS=1: LightGBM predicts with OpenMP, and by default each call starts (and then
+# spin-waits) one thread per CPU. For one-row predictions from a threadpool that is pure overhead:
+# the load test (BENCHMARKS.md) measured 220% of a core at 200 req/s with the default and 132% with
+# 1, for the same answers. Concurrency comes from the request threads, not from inside a predict.
 ENV PATH=/app/.venv/bin:$PATH \
     PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
+    OMP_NUM_THREADS=1 \
     MODEL_ARTIFACT_DIR=/models
 
 USER 10001:10001

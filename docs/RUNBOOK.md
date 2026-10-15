@@ -360,6 +360,18 @@ docker build -f infra/docker/api.Dockerfile -t cageops-api:local .
 scripts/check_api_image.sh cageops-api:local
 ```
 
+**Load test** (D-046; about 15 minutes for the whole matrix, and it needs the machine quiet):
+
+```bash
+docker build -f infra/docker/api.Dockerfile -t cageops-api:local .
+uv run python scripts/loadtest/prepare_db.py --force     # cageops_loadtest: dev data + a synthetic card
+uv run python scripts/loadtest/make_inputs.py            # unique same-division pairs from real data
+uv run python scripts/loadtest/run_loadtest.py --fresh   # each run: restart API, flush, k6, scrape, validate
+uv run python scripts/loadtest/run_loadtest.py --only cold_16 --duration 10s   # one run
+```
+
+Each run lands in `data/bench/api/results.jsonl` with the k6 percentiles, the server's own quantiles and stage timers, the pool statistics, and `valid` / `problems`. A run that fails its validity checks says why; do not quote it. The limiter is off except in the runs marked ON, and the API uses its own Redis database (3) so flushing it touches nothing else.
+
 **Not ready, what to check.** `curl -s localhost:8000/readyz` names the reason. `database unreachable`: is Postgres up and `DATABASE_URL` right (inside compose the host is `postgres`)? `no active model version`: run `cageops_trainer list` and `activate`. `does not match its recorded sha256`: the files in `data/models/<version>` were changed or copied incompletely; retrain or restore them. `prediction 503 features_unavailable`: that fighter has no row in `fighter_features_current`; run `features rebuild`.
 
 ## Production

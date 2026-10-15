@@ -73,7 +73,7 @@ services:
       FRONTEND_KEY_BURST: ${FRONTEND_KEY_BURST:-600}
       DB_POOL_SIZE: ${DB_POOL_SIZE:-5}
       DB_MAX_OVERFLOW: ${DB_MAX_OVERFLOW:-5}
-      DB_POOL_TIMEOUT_S: ${DB_POOL_TIMEOUT_S:-30}
+      DB_POOL_TIMEOUT_S: ${DB_POOL_TIMEOUT_S:-5}
     volumes:
       - ./data/models:/models:ro
     ports:

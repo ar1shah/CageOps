@@ -142,6 +142,103 @@ predictions were committed before any run, so the results can contradict them.
 
 - Notes: the 406 matches the number the ROADMAP carry-over quotes for 2026-10-14. The test-slice log losses `data_quality.known_effect` quotes (0.6878 over 223 fights, 0.6566 over 330) are the Phase 2a entry above and are not re-measured here.
 
+### Phase 2b-2: API load test, RESULTS (2026-10-15)
+- Date: 2026-10-15
+- Hardware: Intel Core i9-13900KF (32 logical CPUs), 31 GiB RAM, WSL2 (Linux 6.18.54.1-microsoft-standard-WSL2); Docker 29.8.0. **k6, the API, Postgres and Redis share this one machine and compete for its CPUs, and k6 reaches the API over the compose bridge network: these are not the numbers a remote client would see.**
+- Commit: `132fd4c` plus the commit that adds this entry. API image `cageops-api:local` (612 MiB), one uvicorn process (a 40-thread pool for sync routes), `OMP_NUM_THREADS=1`. k6 2.3.0. Postgres 16.12 and Redis 7.4.6 in compose.
+- Data: database `cageops_loadtest` (a copy of the dev database, 8,779 completed fights, plus a **synthetic** 36-bout upcoming list on three labelled cards, with a features rebuild), Redis database 3, 60,000 unique same-division pairs from the real data, a 500-pair warm set. Model `20261014-225801`.
+- Commands: `uv run python scripts/loadtest/prepare_db.py --force`, `uv run python scripts/loadtest/make_inputs.py`, then `uv run python scripts/loadtest/run_loadtest.py --fresh --duration 30s` (k6 itself: `docker compose --profile api --profile loadtest run --rm k6 run /scripts/api.js` with `SCENARIO`, `VUS`, `DURATION`, `RATE`). The rate limiter is **off** for every run except those marked "limiter ON" (all load comes from one client, and a limit it would hit measures the limiter and not the API). Cache, pool and timeout are the shipped defaults unless a row says otherwise (pool 5 + 5, pool wait timeout 30 s for these runs; the default was changed to 5 s afterwards, see below).
+- Method: each run restarts the API for its configuration, empties the cache database, runs k6 for 30 s, and scrapes `/metrics` before and after. Warm and mixed runs first make one unmeasured pass over the 500 warm pairs. Every run is validated; the table says which were not. n = 1 per cell, one machine, no confidence intervals: the repeat runs below (`warm` off twice) differ by 0.5%, which is the only noise estimate there is.
+
+**Throughput and latency, `POST /predict` as seen by k6** (closed loop: the clients wait for each answer; open model: requests arrive at a fixed rate)
+
+| run | load | req/s | p50 ms | p95 ms | p99 ms | failed | valid |
+|---|---|---|---|---|---|---|---|
+| cold cache (every pair new) | 16 VUs | 219 | 71.1 | 99.2 | 116 | 0 | yes: 0 hits, 6,582 misses |
+| warm cache, limiter off | 16 VUs | 1,364 | 11.1 | 15.2 | 19.6 | 0 | yes: 40,918 hits, 0 misses |
+| warm cache, limiter ON | 16 VUs | 893 | 17.5 | 22.2 | 25.6 | 0 | yes: 0 refused |
+| warm cache, limiter off (again) | 16 VUs | 1,358 | 11.2 | 15.1 | 20.4 | 0 | yes |
+| mixed (predict 60%, search 20%, profile 10%, upcoming 10%) | 16 VUs | 382 | predict 23.4 | 72.2 | 99.6 | 0 | yes |
+| cold, open model at 50% of cold peak | 110 req/s | 110 | 4.7 | 6.8 | 22.0 | 0 | yes |
+| warm, open model at 50% of warm peak, limiter off | 682 req/s | 682 | 0.85 | 2.21 | 18.6 | 0 | yes |
+| warm, same arrival rate, limiter ON | 682 req/s | 675 | 1.28 | **218.7** | 233 | 0 | **no: 216 iterations dropped, the API could not keep the rate** |
+
+Mixed, by endpoint (k6, ms): predict p50 23.4 / p95 72.2; `GET /fighters?search=` p50 50.6 / p95 83.0; `GET /fighters/{id}` p50 53.8 / p95 87.1; `GET /events/upcoming` (36 bouts, cached after the first) p50 40.9 / p95 69.3. At 16 clients on one saturated process every endpoint queues, which is why a cheap cached `upcoming` sits at 41 ms.
+
+**The limiter's per-request cost, with the numbers side by side**
+
+| | limiter off | limiter ON | difference |
+|---|---|---|---|
+| closed loop, 16 VUs: req/s | 1,364 (1,358 again) | 893 | **-34.5%** |
+| service time per request (1 / req/s) | 0.733 ms | 1.120 ms | **+0.39 ms (+53%)** |
+| p50 / p95 / p99 (ms) | 11.1 / 15.2 / 19.6 | 17.5 / 22.2 / 25.6 | +6.4 / +7.1 / +6.0 |
+| open model, 682 req/s: p50 / p95 / p99 (ms) | 0.85 / 2.21 / 18.6 | 1.28 / **218.7** / 233 | the limiter-on server could not keep 682 req/s without dropping 216 iterations |
+| the same open-model run in the first pass of this test (image without `OMP_NUM_THREADS=1`) | 0.84 / 2.12 / 18.1 | 1.19 / **68.7** / 148 | valid there; the tail is large in both passes |
+
+Reading it: 0.39 ms is one Redis round trip (an `EVALSHA`) plus a thread hop (`anyio.to_thread`), and because a cached prediction costs only 0.73 ms to serve, it is a large fraction. The open-model rows are the more important finding: at an arrival rate that is 50% of the limiter-off capacity, the limiter-on server is at about 75% utilisation (682 x 1.12 ms) and its tail latency explodes (p95 69 to 219 ms) while its throughput does not look much worse. A cheap request plus a per-request thread hop plus Redis is GIL and scheduling contention, not Redis latency (the cache stage averaged 2.2 ms with the limiter on against 3.1 ms off in the closed loop, so Redis itself is not slower). I did not isolate the cause further.
+
+**Where a prediction spends its time** (`api_predict_stage_seconds`, mean per request; these are the server's own timers)
+
+| stage | cold, uncontended (110 req/s) | cold, 16 VUs saturated | warm, uncontended (682 req/s) | warm, 16 VUs saturated |
+|---|---|---|---|---|
+| `cache` (Redis GET, and SET on a miss) | 0.24 ms | 2.90 ms | 0.29 ms | 3.12 ms |
+| `db` (pooled connection wait + 4 queries) | **2.80 ms** | 41.5 ms (pool wait p50 7.7 ms, p95 43.7 ms) | none | none |
+| `assemble` (row to model input) | 0.05 ms | 0.03 ms | none | none |
+| `model` (TreeSHAP both orders, win, method) | **0.76 ms** | 8.4 ms | none | none |
+| `build` + `serialize` | 0.13 ms | 0.13 ms | 0.05 ms | 0.05 ms |
+| request total, server p50 | 4.1 ms | 75.6 ms | 0.58 ms | 9.2 ms |
+
+**The cold/warm gap, explained from those timers.** Throughput is 219 against 1,364 req/s, 6.2 times; uncontended latency is 4.7 against 0.85 ms, 5.6 times. Of the 3.9 ms a miss costs beyond a hit, the database stage is 2.8 ms (four queries, each a round trip plus SQLAlchemy and psycopg Python work, and two of them scan `completed_fights`) and the model 0.76 ms; Redis, assembly and serialization are about a tenth. A hit skips both. Under saturation the same stages inflate (db 2.8 to 41.5 ms) because 16 threads share one process: that inflation is queueing for the interpreter and the pool, not the database doing more work (Postgres averaged 37% of one core at 200 req/s while the API process used 130%).
+
+**Is the process the limit? Yes.** `docker stats` during a cold run at 16 VUs: API 221% of a core, Postgres 37%, k6 7%, Redis 2% (default OpenMP threads); API 132%, Postgres 36%, k6 7%, Redis 0.4% with `OMP_NUM_THREADS=1`. Cold throughput (219 req/s) is about 1 / the uncontended latency (1 / 4.74 ms = 211 req/s): the one Python process does the work essentially serially. More connections, more threads and a bigger pool do not help; more processes would.
+
+**`OMP_NUM_THREADS=1` (a finding, now in the Dockerfile).** LightGBM predicts with OpenMP and by default starts, and spin-waits on, one thread per CPU per call; for one-row predictions from a thread pool that is pure overhead. Same machine, same data, the image without and with the variable:
+
+| | default OpenMP | `OMP_NUM_THREADS=1` |
+|---|---|---|
+| `model` stage, uncontended (110 req/s) | 3.24 ms | **0.76 ms** |
+| uncontended cold request, p50 (k6) | 7.26 ms (at 101 req/s) | **4.74 ms** (at 110 req/s) |
+| cold, 16 VUs: req/s / p50 | 203 / 76.8 ms | **219 / 71.1 ms** (+8%) |
+| API CPU during a cold run | 221% | 132% |
+| warm, mixed | 1,370 / 378 req/s | 1,364 / 382 req/s (no model on the warm path: unchanged) |
+
+**The database pool** (cold cache, 64 clients: far more than 10 connections, so the pool is the queue)
+
+| pool (size + overflow), wait timeout | req/s | p50 / p95 ms | peak checked out | pool wait p50 / p95 / p99 ms | checkout timeouts |
+|---|---|---|---|---|---|
+| 5 + 5 (the default), 30 s | 212.5 | 293 / 436 | 10 | 230 / 473 / 495 | 0 |
+| 10 + 10, 30 s | 217.7 | 288 / 359 | 20 | 31 / 98 / 407 | 0 |
+| 20 + 20, 30 s | 210.3 | 300 / 368 | 40 | 8.3 / 44.7 / 49.5 | 0 |
+| 2 + 0, 1 s | 228.7 | 273 / 357 | 2 | 290 / 479 / 496 | 0 (never exhausted: the wait never reached 1 s) |
+| 2 + 0, **50 ms** | 515 (including failures) | 118 / 176 | 2 | 71 / 98 / 126 | **11,621 of 15,507 requests (74.9%)**, each a `503 database_busy` |
+| at 16 clients (the cold run above), 5 + 5, 30 s | 219 | 71 / 99 | 10 | 7.7 / 43.7 / 49.0 | 0 |
+| at 50% of cold peak (110 req/s), 5 + 5, 30 s | 110 | 4.7 / 6.8 | 7 | 0.3 / 0.49 / 1.14 | 0 |
+
+What it shows: **throughput does not move with pool size** (212.5, 217.7, 210.3 req/s for 5, 10 and 20 connections each way, within 3.4% of one another, with p50 about 290 to 300 ms = 64 clients / 215 req/s in every case). A bigger pool moves the waiting from the pool queue to the interpreter queue (pool wait p95 473 to 45 ms, while the model stage rose from 9.9 to 14.0 ms and the cache stage from 3.4 to 32.7 ms). A pool of 2 still served about 129 successful req/s. The 50 ms diagnostic shows the safety valve works: three in four requests were refused quickly with a 503 rather than queued, and every failure was a counted pool timeout (failed requests = timeouts exactly).
+
+**Pool recommendation, by the rule written before the runs.** The rule was: smallest size where pool-wait p95 is under 5 ms or throughput is within 5% of the next size up, **and** peak checked-out at or under 80% of the ceiling. Under 64 clients the second clause cannot hold for any size (a closed loop with more clients than connections always reaches the ceiling), so I applied the rule at the load the process can sustain, 50% of cold peak: 5 + 5 peaks at 7 of 10 (70%), pool wait p95 0.49 ms, no timeouts, and throughput at overload is within 2.4% of 10 + 10. **Keep `DB_POOL_SIZE=5` and `DB_MAX_OVERFLOW=5`.** **Change `DB_POOL_TIMEOUT_S` from 30 to 5**: the longest wait in a run that was not deliberately starved was 0.5 s, a request that has waited 5 s is not going to be answered usefully, and 30 s keeps a client, a thread and a request open far past anything that will still be listening; a fast 503 with `Retry-After` is what the limiter and the frontend can act on. This is the one default changed (`config.py`, `.env.example`, compose). The 5 s value is a judgment bounded by these measurements (the starved run proves the 503 path, not that 5 s is optimal), not a tuned optimum.
+
+**Predictions against what happened** (the predictions are the entry below; the cold and pool rows were informed by a dry run, as that entry says)
+
+| | predicted | measured | verdict |
+|---|---|---|---|
+| cold req/s; p50; p95 | about 200 (150 to 260); 75; 110 ms | 219; 71; 99 ms | inside |
+| warm, limiter off: req/s; p50; p95 | about 800 (500 to 1,200); 18; 30 ms | 1,364; 11.1; 15.2 ms | **outside, faster**: a hit is about 0.73 ms of process time, not 1.2 |
+| limiter's service-time cost | +0.3 to +0.7 ms | +0.39 ms | inside |
+| limiter's effect on req/s; p50; p95 | -15% (5 to 30%); +3; +5 ms | -34.5%; +6.4; +7.1 ms | **outside, worse** (the baseline was cheaper than I assumed, so the same 0.39 ms is a bigger share) |
+| warm off, repeat | within 10% | within 0.5% | inside |
+| mixed req/s | about 430 (300 to 600) | 382 | inside |
+| rate_warm p50; p95; p99 | 3; 8; under 20 ms | 0.85; 2.21; 18.6 ms | better than predicted |
+| rate_cold p50; p95 | 20; 45 ms | 4.7; 6.8 ms | **outside, far faster**: I assumed 12 to 18 ms of server time, it is 4 |
+| pool 5 + 5: req/s; p50; wait p95; peak; timeouts | about cold_16; about 300 ms; hundreds of ms; 10; 0 | 212; 293 ms; 473 ms; 10; 0 | inside |
+| pool 10 + 10 over 5 + 5 | +10 to +25% req/s | +2.4% | **outside**: no gain |
+| pool 20 + 20 vs 10 + 10 | within 10% | -3.4% | inside (and peak "well under 40": it was 40, all of it, because 64 clients) |
+| cold/warm throughput ratio | 4 to 5 times | 6.2 times | **outside, higher** |
+
+**What I would do about it, in order of payoff** (none is in this PR): (1) make the limiter's Redis call without the thread hop (an `redis.asyncio` client), because 0.39 ms and a 69 to 219 ms p95 at three-quarters utilisation is a poor price for a cheap endpoint; (2) cut the per-request queries from four to two (names with rows, divisions with counts), since the database stage is 2.8 of 3.9 uncontended milliseconds and most of that is Python-side round-trip cost; (3) more processes or replicas, since one process is the limit (Phase 6; `uvicorn --workers` needs Prometheus multiprocess mode, which this API deliberately does not use).
+
+- Caveats: n = 1 per cell; one machine on which the load generator competes with the system under test; WSL2 and Docker Desktop networking; a synthetic upcoming card; 30 s windows; k6 `http_req_duration` includes the compose network hop. The first pass of the whole matrix (default OpenMP, kept in `data/bench/api/results_matrix1_omp_default.jsonl`) agrees with the second everywhere except where the table says OpenMP mattered. Raw per-run records are in `data/bench/api/results.jsonl` (gitignored).
+
 ### Phase 2b-2: API load test, PREDICTIONS (written before the runs, 2026-10-15)
 - Written: 2026-10-15, before the first measured run, and committed before it (D-026's practice).
 - **Disclosure:** the harness was exercised once before this was written, with an 8 s cold run at 16 VUs, to find bugs in it. That run was valid and showed about 204 req/s, predict p50 about 76 ms, p95 about 105 ms, a connection pool at its ceiling (peak 10 of 5+5) and a database stage averaging about 42 ms. **The cold and pool predictions below are therefore informed by it** and are not blind. Every other prediction was made without a measurement of that scenario. The dry run's record is kept in `data/bench/api/dryrun/` and is not part of the results.

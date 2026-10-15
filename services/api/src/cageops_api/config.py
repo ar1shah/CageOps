@@ -56,12 +56,14 @@ class ApiSettings(BaseSettings):
     frontend_user_burst: float = Field(default=100.0, ge=1)
     frontend_key_rate_per_minute: float = Field(default=6000.0, gt=0)
     frontend_key_burst: float = Field(default=600.0, ge=1)
-    # The database connection pool. These are the numbers SQLAlchemy would use anyway; real ones
-    # come from the 2b-2 load test, which is why `api_db_pool_*` is exposed (D-041).
+    # The database connection pool (D-041). The load test found the size is not what limits
+    # throughput (5+5, 10+10 and 20+20 all gave about 210 req/s), so the sizes stay at 5 + 5.
     db_pool_size: int = Field(default=5, ge=1)
     db_max_overflow: int = Field(default=5, ge=0)
-    # Seconds a request waits for a free connection before it is answered 503.
-    db_pool_timeout_s: float = Field(default=30.0, gt=0)
+    # Seconds a request waits for a free connection before it is answered 503 database_busy. Was
+    # 30; the worst wait seen in any run that was not deliberately starved was about 0.5 s, and a
+    # client will not wait 30 s for an answer anyway.
+    db_pool_timeout_s: float = Field(default=5.0, gt=0)
 
     @field_validator("trusted_proxy_cidrs")
     @classmethod
