@@ -292,6 +292,6 @@ By year, 2023 on (all years are in the `--json` output):
 | bookmakers per fight | median 24, min 1, max 30 |
 | last snapshot, days before the event | median 0; 68% within 1 day |
 
-**What the file is.** 214,407 rows: a one-time historical import (source `zewnetrzne`, 6,299 rows for events 2010 to 2024-12-07, all added 2025-07-27, so `adding_date` is not a capture time there) plus live daily snapshots from about 40 bookmaker and region combinations from 2025-07-26 on (684 rows have no `adding_date` and no source). 100% of the 2026 rows were added on or before the event day. Event dates run to 2028-07-30 (upcoming placeholders).
+**What the file is.** 214,407 rows: a one-time historical import (source `zewnetrzne`, 6,299 rows for events 2010 to 2024-12-07, all added 2025-07-27, so `adding_date` is not a capture time there) plus live daily snapshots from 39 distinct bookmaker names from 2025-07-26 on (684 rows have no `adding_date` and no source). 100% of the 2026 rows were added on or before the event day. Event dates run to 2028-07-30 (upcoming placeholders).
 
 **What this does and does not show.** It shows how many of our fights a loader could price, and that the feed's favorite agrees with mdabbert's where both exist. It does not show how the model compares with this baseline: nothing was loaded and the model was not re-scored. The consensus is "last snapshot on or before the event day", which is close to a closing line (68% within a day) but is not proven to be one.

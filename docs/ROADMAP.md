@@ -140,6 +140,7 @@ Then load-test with locust or k6: record p50/p95/p99 latency and requests/sec wi
 - Upcoming bouts: fill `is_title_fight` and `scheduled_rounds` from the upcoming-event data (title fights and main events are known in advance) and write them into `fight_features` for scheduled fights, so Phase 5 can bring them back as features (D-032; measured cost of leaving them out: 0.006 val log loss on the method model).
 - The training staleness guard ignores scheduled bouts, so 2b needs its own check that the features for an upcoming fight are current before predicting it (D-033).
 - The image needs `apt-get install libgomp1` (LightGBM), and the API must not pull in the training code: move the small inference pieces to a shared module rather than importing `cageops_trainer` into the API image.
+- **Rate features are stale for anyone who fought on or after 2026-05-17.** Those fights are Wikipedia results with no per-round stats (D-025, D-029), so a fighter's rates exclude them, and nothing can fill them in while ufcstats is gated. 406 fighters were affected on 2026-10-14: `SELECT count(DISTINCT p) FROM (SELECT fighter_a_id AS p FROM fights f JOIN events e ON e.id = f.event_id WHERE e.event_date >= '2026-05-17' AND f.status = 'completed' UNION SELECT fighter_b_id FROM fights f JOIN events e ON e.id = f.event_id WHERE e.event_date >= '2026-05-17' AND f.status = 'completed') x`. So the upcoming-bout freshness check must tell "features current" from "rates complete": compare `n_fights_career`, `n_fights_last3` and `n_fights_last5` with `n_fights_with_stats_*` for each fighter (both exist in `fight_features`; the models do not use them, D-032) and return the gap (for example `stats_gap_fights`) to the caller rather than failing the prediction or calling it fresh. The only measured sign of the cost is the Wikipedia-period test slice (223 fights, log loss 0.6878 against 0.6566 before it, BENCHMARKS.md).
 
 ### Prompt 2c — first real deploy
 ```
@@ -219,6 +220,10 @@ Phase 5: close the loop.
 - /model/performance endpoint: accuracy, log loss, and calibration by model version and over time; wire it into the /model page
 - a backtest CLI that replays a past date range as if live
 ```
+
+### Carry-over from the 2a gap investigation (read before starting Phase 5)
+- **Results after an event come from Wikipedia while ufcstats is gated** (D-013, D-025, D-028). Grading and the weekly forced refresh below must therefore run against that source: `SCRAPER_SOURCE=wikipedia INGEST_QUEUE=ingest-wikipedia` (RUNBOOK, "Wikipedia results"), and `backfill --since <date> --force` re-fetches articles older than the 30-day window. They carry results only, no per-round stats, so retraining keeps excluding those fights from the rate features (D-027). If the operator allowlists our User-Agent or shares an export, the adoption step that merges Wikipedia-created rows with ufcstats' (D-029) comes first.
+- **The daily odds loader (D-034).** Grading real events needs prices for events mdabbert will never cover, and the favorite comparison needs them for the Wikipedia period (0 of 223 fights today; 162 with the jerzyszocik daily dataset). Scope, measurements and the baseline-policy question are in D-034 and BENCHMARKS.md; re-download and re-run `scripts/odds_daily_probe.py` first, because the file changes daily.
 
 ### Done when
 - [ ] Predictions for at least one real event were stored beforehand and graded after
