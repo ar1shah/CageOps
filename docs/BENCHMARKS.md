@@ -142,6 +142,20 @@ predictions were committed before any run, so the results can contradict them.
 
 - Notes: the 406 matches the number the ROADMAP carry-over quotes for 2026-10-14. The test-slice log losses `data_quality.known_effect` quotes (0.6878 over 223 fights, 0.6566 over 330) are the Phase 2a entry above and are not re-measured here.
 
+### Phase 2b-2: the input fingerprint the cache key polls (D-042)
+- Date: 2026-10-15
+- Hardware: Intel Core i9-13900KF (32 logical CPUs), 31 GiB RAM, WSL2 (Linux 6.18.54.1-microsoft-standard-WSL2); Python 3.12.14; Postgres 16.12 in Docker on the same machine; warm cache, no other load.
+- Commit: the commit that adds this entry. Database: 8,779 completed fights, 17,558 `fight_totals` rows, features build `load_runs.id` 38.
+- Command: `cageops_common.db.fingerprint.features_input_fingerprint(conn)` called 15 times on one connection after one warm-up call, timed with `time.perf_counter` in a short script; and, for comparison, `SELECT count(*), max(id) FROM completed_fights` plus `SELECT max(id) FROM load_runs WHERE source = 'features'`, 30 times.
+- Result:
+
+| what | time |
+|---|---|
+| `features_input_fingerprint` (a hash of every completed fight, its date, both bios and its stats) | median 50 ms, range 47 to 63 ms |
+| the cheap watermark (a count, a max id, the latest build id) | median 1.1 ms |
+
+- Notes: the API calls the fingerprint in a background thread every `MODEL_POLL_INTERVAL_S` (30 s), not per request, so the 50 ms is about 0.17% of one database connection's time, and no request waits on it. It was chosen over the watermark because it also notices a result that changed or a bio that was filled in, which a count cannot. It equalled the latest build's stored `inputs_sha256` on this database. This is database time for one process on one machine.
+
 ### Phase 2a: model quality against the baselines (real data, model version `20261014-225801`)
 - Date: 2026-10-14
 - Hardware: the same machine as below (Intel Core i9-13900KF, WSL2). Not a performance number; quality does not depend on it.

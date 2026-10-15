@@ -156,3 +156,38 @@ class ApiMetrics:
 
     def watch_pool(self, engine: Callable[[], Engine | None]) -> None:
         self.registry.register(PoolCollector(engine))
+
+        # -- the prediction cache (D-042) ---------------------------------------------------
+        self.cache_hits = Counter(
+            "api_cache_hits_total", "Predictions answered from Redis.", registry=self.registry
+        )
+        self.cache_misses = Counter(
+            "api_cache_misses_total",
+            "Predictions Redis was asked for and did not have (they are then computed).",
+            registry=self.registry,
+        )
+        self.cache_bypassed = Counter(
+            "api_cache_bypassed_total",
+            "Predictions computed without consulting the cache: disabled, no features state yet, "
+            "or Redis unavailable.",
+            registry=self.registry,
+        )
+        self.redis_errors = Counter(
+            "api_redis_errors_total",
+            "Redis calls that failed or timed out. The API failed open each time.",
+            ["op"],
+            registry=self.registry,
+        )
+
+        # -- what the features and the registry looked like at the last poll ----------------
+        self.features_build_id = Gauge(
+            "api_features_build_id",
+            "load_runs.id of the latest features build the cache key is using.",
+            registry=self.registry,
+        )
+        self.features_inputs_match = Gauge(
+            "api_features_inputs_match_build",
+            "1 when what the features were built from is what the database holds now; 0 when a "
+            "result, bio or stat changed since the last features rebuild.",
+            registry=self.registry,
+        )

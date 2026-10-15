@@ -212,7 +212,7 @@ def resolve_context(
     )
 
 
-def predict_matchup(
+def compute_core(
     *,
     request: PredictRequest,
     db: Database,
@@ -220,7 +220,9 @@ def predict_matchup(
     as_of: date,
     top_n: int,
     metrics: ApiMetrics,
-) -> PredictResponse:
+) -> PredictionCore:
+    """Read the rows, run the model, and describe the matchup in canonical (lo, hi) order. This is
+    the expensive part, and the only part that is cached."""
     ids = [request.fighter_a_id, request.fighter_b_id]
     lo_id, hi_id = sorted(ids)
 
@@ -297,14 +299,16 @@ def predict_matchup(
             features_build_id=max(rows[i]["load_run_id"] for i in ids),
             stale_names=stale_names,
         )
-        response = orient(core, request.fighter_a_id)
+    return core
 
+
+def record_prediction(metrics: ApiMetrics, core: PredictionCore) -> None:
+    """Count one prediction served, whether it was computed or came from the cache."""
     metrics.predictions.labels("predict").inc()
-    if not all(_no_gap(q) for q in quality.values()):
+    if not (_no_gap(core.quality_lo) and _no_gap(core.quality_hi)):
         metrics.predictions_stats_gap.inc()
-    if stale_names:
+    if core.stale_names:
         metrics.predictions_stale.inc()
-    return response
 
 
 def _no_gap(q: FighterQuality) -> bool:
@@ -312,4 +316,4 @@ def _no_gap(q: FighterQuality) -> bool:
     return g.career == g.last3 == g.last5 == 0
 
 
-__all__ = ["PredictionCore", "orient", "predict_matchup"]
+__all__ = ["PredictionCore", "compute_core", "orient", "record_prediction"]

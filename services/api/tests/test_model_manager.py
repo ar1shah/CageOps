@@ -31,6 +31,7 @@ def make_app(db, model_dir):
             settings=Settings(database_url="postgresql://x", redis_url="redis://x"),
             api_settings=ApiSettings(
                 model_artifact_dir=model_dir,
+                cache_enabled=False,
                 model_poll_interval_s=poll_interval_s,
                 model_reload_retry_s=retry_s,
             ),

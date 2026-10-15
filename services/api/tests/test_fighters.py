@@ -18,7 +18,7 @@ TODAY = datetime(2026, 10, 15, 16, 0, tzinfo=UTC)  # 12:00 in New York
 def client(db, model_dir):
     app = create_app(
         settings=Settings(database_url="postgresql://x", redis_url="redis://x"),
-        api_settings=ApiSettings(model_artifact_dir=model_dir),
+        api_settings=ApiSettings(model_artifact_dir=model_dir, cache_enabled=False),
         engine=db,
         configure_logs=False,
         poll=False,

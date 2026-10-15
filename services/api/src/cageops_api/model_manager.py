@@ -13,7 +13,6 @@ served from it, and nothing is served from "some other model file on disk" eithe
 
 from __future__ import annotations
 
-import asyncio
 import logging
 import threading
 import time
@@ -214,10 +213,3 @@ class ModelManager:
             },
         )
         return "loaded"
-
-    # -- the background loop --------------------------------------------------------------
-
-    async def poll_forever(self) -> None:
-        while True:
-            await asyncio.sleep(self.poll_interval_s)
-            await asyncio.to_thread(self.refresh)

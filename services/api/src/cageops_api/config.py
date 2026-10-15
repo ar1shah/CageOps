@@ -28,6 +28,15 @@ class ApiSettings(BaseSettings):
     model_reload_retry_s: float = Field(default=300.0, ge=0)
     # How many contributing features /predict returns by default (D-038).
     predict_top_features: int = Field(default=5, ge=1, le=10)
+    # The Redis prediction cache (D-042). It never decides whether a prediction is served: when
+    # Redis is down or slow the API computes the answer itself and counts the failure.
+    cache_enabled: bool = True
+    # Safety net, not the invalidation mechanism (the key is): bounds what the key cannot see
+    # (a renamed fighter, a result overturned before the next poll) and Redis memory.
+    cache_ttl_s: int = Field(default=21600, gt=0)
+    # Socket timeout for every Redis call, in milliseconds. Short on purpose: a slow cache must
+    # cost less than recomputing.
+    redis_timeout_ms: int = Field(default=100, gt=0)
     # The database connection pool. These are the numbers SQLAlchemy would use anyway; real ones
     # come from the 2b-2 load test, which is why `api_db_pool_*` is exposed (D-041).
     db_pool_size: int = Field(default=5, ge=1)

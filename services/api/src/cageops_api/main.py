@@ -15,14 +15,19 @@ from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 
+import redis
 from fastapi import FastAPI, Request, Response
 from fastapi.responses import JSONResponse
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
+from redis.backoff import NoBackoff
+from redis.retry import Retry
 from sqlalchemy import Engine
 
+from cageops_api.cache import PredictionCache
 from cageops_api.config import ApiSettings, get_api_settings
 from cageops_api.db import Database
 from cageops_api.errors import install_error_handlers
+from cageops_api.features_watch import FeaturesWatch
 from cageops_api.metrics import ApiMetrics
 from cageops_api.middleware import RequestContextMiddleware
 from cageops_api.model_manager import ModelManager, ModelUnavailable
@@ -47,14 +52,16 @@ def create_app(
     settings: Settings | None = None,
     api_settings: ApiSettings | None = None,
     engine: Engine | None = None,
+    redis_client: redis.Redis | None = None,
     configure_logs: bool = True,
     poll: bool = True,
     clock: Callable[[], datetime] | None = None,
 ) -> FastAPI:
     """Build the app. Arguments exist for tests; the real app passes none and reads the
-    environment inside the lifespan, not here. `poll=False` starts no background poller (a test
-    then calls `app.state.model_manager.refresh()` itself). `clock` returns an aware datetime;
-    it is how tests pin "today"."""
+    environment inside the lifespan, not here. `redis_client` replaces the one built from
+    REDIS_URL (tests). `poll=False` starts no background poller (a test then calls
+    `app.state.model_manager.refresh()` and `app.state.features_watch.refresh()` itself). `clock`
+    returns an aware datetime; it is how tests pin "today"."""
     metrics = ApiMetrics()
 
     @asynccontextmanager
@@ -87,10 +94,35 @@ def create_app(
             metrics=metrics,
         )
         app.state.model_manager = manager
+        watch = FeaturesWatch(owned_engine, metrics)
+        app.state.features_watch = watch
+
+        owned_redis = redis_client
+        if owned_redis is None and own.cache_enabled:
+            timeout = own.redis_timeout_ms / 1000
+            owned_redis = redis.Redis.from_url(
+                common.redis_url,
+                socket_timeout=timeout,
+                socket_connect_timeout=timeout,
+                retry=Retry(NoBackoff(), 0),  # fail fast: the cache must never be slower than not
+                health_check_interval=0,
+            )
+        app.state.cache = PredictionCache(
+            owned_redis if own.cache_enabled else None, ttl_s=own.cache_ttl_s, metrics=metrics
+        )
+
         # Load before taking traffic. A failure does not stop the app: it starts, reports not
         # ready (503 on /readyz and on predictions), and the poller keeps trying.
         await asyncio.to_thread(manager.refresh)
-        task = asyncio.create_task(manager.poll_forever()) if poll else None
+        await asyncio.to_thread(watch.refresh)
+
+        async def poll_forever() -> None:
+            while True:
+                await asyncio.sleep(own.model_poll_interval_s)
+                await asyncio.to_thread(manager.refresh)
+                await asyncio.to_thread(watch.refresh)
+
+        task = asyncio.create_task(poll_forever()) if poll else None
         log.info(
             "api started",
             extra={
@@ -106,6 +138,8 @@ def create_app(
                 task.cancel()
                 with contextlib.suppress(asyncio.CancelledError):
                     await task
+            if redis_client is None and owned_redis is not None:
+                owned_redis.close()
             if engine is None:
                 owned_engine.dispose()
 
