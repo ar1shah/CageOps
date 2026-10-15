@@ -16,14 +16,13 @@ from typing import Any
 from sqlalchemy import Engine, text
 
 # One row per (fight, fighter) for completed fights, flagged when the fight has no stats.
-# Reads `fights`, not the `completed_fights` view: the view is `SELECT *` frozen at creation, so it
-# has no `result_source` column (D-029).
+# `completed_fights` is the one definition of "completed"; since migration 0011 it exposes
+# `result_source`, so nothing here repeats its predicate.
 _SIDES = """
 WITH cf AS (
   SELECT f.id AS fight_id, e.event_date, f.result_source, f.fighter_a_id AS a, f.fighter_b_id AS b,
          (SELECT count(*) FROM fight_totals t WHERE t.fight_id = f.id) >= 2 AS has_stats
-  FROM fights f JOIN events e ON e.id = f.event_id
-  WHERE f.status = 'completed'
+  FROM completed_fights f JOIN events e ON e.id = f.event_id
 ),
 sides AS (
   SELECT fight_id, event_date, result_source, has_stats, a AS fighter_id FROM cf

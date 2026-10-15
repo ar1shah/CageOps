@@ -15,6 +15,7 @@ EXPECTED_TABLES = {
     "fight_round_stats",
     "fight_totals",
     "fighter_aliases",
+    "fighter_features_current",
     "fighters",
     "fights",
     "load_runs",
@@ -300,6 +301,31 @@ def test_completed_fights_view_only_has_finished_fights(db):
         visible = conn.execute(text("SELECT ufcstats_id FROM completed_fights")).scalars().all()
 
     assert visible == ["a000000000000001"]
+
+
+def test_completed_fights_is_the_one_definition_and_exposes_who_supplied_the_result(db):
+    """The view was `SELECT *` frozen at creation and silently lacked result_source (0011).
+    Every column of `fights` is in the view or listed here with a reason, so a new column makes
+    this fail until someone decides, instead of the view going stale again."""
+    not_exposed: dict[str, str] = {}  # none today
+    with db.begin() as conn:
+        insert_bout(conn, uid="b000000000000001", **COMPLETED)
+        insert_bout(conn, uid="b000000000000002", b=3)
+        insert_bout(conn, uid="b000000000000003", b=4, status="cancelled")
+        view_cols = conn.execute(text("SELECT * FROM completed_fights LIMIT 0")).keys()
+        fight_cols = conn.execute(text("SELECT * FROM fights LIMIT 0")).keys()
+        via_view = set(conn.execute(text("SELECT id FROM completed_fights")).scalars())
+        direct = set(
+            conn.execute(text("SELECT id FROM fights WHERE status = 'completed'")).scalars()
+        )
+        sources = conn.execute(text("SELECT result_source FROM completed_fights")).scalars().all()
+
+    assert set(fight_cols) - set(view_cols) == set(not_exposed), (
+        "add the new fights column to completed_fights in a migration (or list it here)"
+    )
+    assert "result_source" in view_cols
+    assert via_view == direct and len(via_view) == 1
+    assert sources == ["ufcstats"]
 
 
 def test_the_rankings_view_also_covers_scheduled_bouts(db):
