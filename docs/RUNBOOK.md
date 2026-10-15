@@ -256,7 +256,8 @@ uv run python -m cageops_worker.features rebuild --today 2026-10-06
 ```
 
 - `rebuild` recomputes every row in one transaction and prints a JSON report: row counts, `history_through` (the latest completed event we hold), how many completed fights have no trusted length (by reason), any past-dated `scheduled` fights it left out, and `output_sha256` (the same data always gives the same hash). If a check fails (every fight must produce exactly 2 rows) it exits 1, prints the report on stderr and leaves the old table untouched. A failed run leaves no `load_runs` row, same as the seed loaders.
-- `--today` pins what "upcoming" means (scheduled fights dated before it are left out); the default is the real date.
+- `--today` pins what "upcoming" means (scheduled fights dated before it are left out) and the date `fighter_features_current` is as of. The default is today **in `APP_TIMEZONE`** (America/New_York unless set), not the host's local date: event dates are US-local, so a Saturday card stays upcoming until midnight there (D-037).
+- The same transaction also rewrites `fighter_features_current` (one row per fighter, as of the build date; this is what the API reads for an ad-hoc matchup). It stores `dob` and `last_fight_date`, not `age_days` or `days_since_last_fight`: those two depend on the date being asked about and are derived when needed. The report adds `fighters_current`, `current_as_of` and `current_output_sha256`; `output_sha256` still describes `fight_features` only.
 - Rebuild after any seed load or ingestion run, and after a result is overturned (a rebuild picks up the corrected result).
 - The report also has `inputs_sha256`: a hash of the completed fights, their dates, their fighters' bios and their whole-fight stats, which is what the build read (D-033). `train` recomputes it and refuses to train when it no longer matches, so a rebuild is required after any change to those, including a Wikipedia replay (see below). `output_sha256` is unchanged by it.
 
@@ -268,6 +269,16 @@ uv run python -m cageops_worker.features show --fighter-id 1234 --json
 ```
 
 Spot-check against what you know: the first row should say 0 prior fights, and `win_streak` should reset to 0 right after a loss.
+
+Who is missing per-round stats, and why (read-only; needs no rebuild):
+
+```bash
+uv run python -m cageops_worker.features stats-gap --since 2026-05-17
+uv run python -m cageops_worker.features stats-gap --json
+```
+
+- A fight counts as having stats only when **both** fighters have a `fight_totals` row, the same test the builder uses. The report splits fighters by who supplied the stat-less result (`fights.result_source`): `wikipedia_only` are the ones whose recent fights came from Wikipedia (D-025, D-029); `ufcstats_only` are old fights the source never had numbers for (21 fights from the 1990s on 2026-10-15).
+- `--since 2026-05-17` reproduces the ROADMAP's query: fighters with a completed fight on or after that date (406 on 2026-10-15), and how many of them have a fight lacking stats (also 406). Without `--since`, 442 fighters had a gap: 406 Wikipedia-only plus 36 ufcstats-only.
 
 ## Training
 

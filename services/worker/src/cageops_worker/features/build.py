@@ -1,6 +1,6 @@
-"""Rebuild `fight_features` from scratch in one transaction.
+"""Rebuild `fight_features` and `fighter_features_current` from scratch in one transaction.
 
-A failure anywhere rolls the whole thing back, so the old table survives. Like the seed loaders,
+A failure anywhere rolls the whole thing back, so the old tables survive. Like the seed loaders,
 a failed run leaves no `load_runs` row (the row is written inside the same transaction); the
 only trace is the exit code and stderr (see D-027).
 """
@@ -16,7 +16,7 @@ from typing import Any
 from sqlalchemy import Engine, func, insert, text
 
 from cageops_common.db.fingerprint import features_input_fingerprint
-from cageops_common.db.models import FightFeatures, LoadRun
+from cageops_common.db.models import FighterFeaturesCurrent, FightFeatures, LoadRun
 from cageops_worker.features.compute import (
     DURATION_NULL_REASONS,
     Subject,
@@ -36,6 +36,12 @@ BOOKKEEPING_COLUMNS = ("built_at", "load_run_id")
 FEATURE_COLUMNS = [
     c.name for c in FightFeatures.__table__.columns if c.name not in BOOKKEEPING_COLUMNS
 ]
+# The same for `fighter_features_current` (D-037): one row per fighter, as of the build date.
+CURRENT_COLUMNS = [
+    c.name for c in FighterFeaturesCurrent.__table__.columns if c.name not in BOOKKEEPING_COLUMNS
+]
+# Not computed from `compute_features`' output by name: they describe the row, not the history.
+_CURRENT_OWN = ("fighter_id", "built_as_of", "last_fight_date", "dob")
 
 
 class FeatureBuildError(Exception):
@@ -82,6 +88,46 @@ def build_rows(history: History, targets: list[FightRecord], today: date) -> lis
                 ),
             )
             rows.append({"fight_id": fight.fight_id, "fighter_id": fighter_id, **features})
+    return rows
+
+
+def build_current_rows(history: History, today: date) -> list[dict[str, Any]]:
+    """One row per fighter: their history as of `today` (completed fights strictly before it).
+
+    Same `prior_fights` and `compute_features` as `build_rows`, so the two tables cannot disagree
+    about what a fighter had done. `age_days` and `days_since_last_fight` are left out on purpose;
+    `last_fight_date` and `dob` are what they are derived from (D-037).
+    """
+    rows = []
+    for fighter_id in sorted(history.bios):
+        bio = history.bios[fighter_id]
+        prior = prior_fights(history, fighter_id, today)
+        features = compute_features(
+            prior,
+            Subject(
+                event_date=today,
+                dob=bio.dob,
+                height_cm=bio.height_cm,
+                reach_cm=bio.reach_cm,
+                stance=bio.stance,
+                weight_class=None,
+                is_title_fight=None,
+                scheduled_rounds=None,
+            ),
+            has_unresolved_prior_fight=has_unresolved_prior_fight(
+                history, fighter_id, today, today
+            ),
+        )
+        row = {name: features[name] for name in CURRENT_COLUMNS if name not in _CURRENT_OWN}
+        rows.append(
+            {
+                "fighter_id": fighter_id,
+                "built_as_of": today,
+                "last_fight_date": prior[-1].event_date if prior else None,
+                "dob": bio.dob,
+                **row,
+            }
+        )
     return rows
 
 
@@ -135,12 +181,16 @@ def rebuild(engine: Engine, today: date) -> dict[str, Any]:
         inputs_sha256 = features_input_fingerprint(conn)
         targets, stale = target_fights(history, today)
         rows = build_rows(history, targets, today)
+        current_rows = build_current_rows(history, today)
         report = build_report(history, targets, stale, rows, today)
         if report["fights_without_exactly_two_rows"]:
             raise FeatureBuildError("some fights did not produce exactly 2 rows", report)
 
         report["inputs_sha256"] = inputs_sha256
-        report["output_sha256"] = fingerprint(rows)
+        report["output_sha256"] = fingerprint(rows)  # fight_features only, as since D-027
+        report["fighters_current"] = len(current_rows)
+        report["current_as_of"] = today.isoformat()
+        report["current_output_sha256"] = fingerprint(current_rows)
         run_id = conn.execute(
             insert(LoadRun)
             .values(
@@ -157,6 +207,11 @@ def rebuild(engine: Engine, today: date) -> dict[str, Any]:
         for start in range(0, len(rows), BATCH):
             batch = [r | {"load_run_id": run_id} for r in rows[start : start + BATCH]]
             conn.execute(insert(FightFeatures), batch)
+        # Same transaction and the same run id: a reader sees the old pair or the new pair.
+        conn.execute(text("DELETE FROM fighter_features_current"))
+        for start in range(0, len(current_rows), BATCH):
+            batch = [r | {"load_run_id": run_id} for r in current_rows[start : start + BATCH]]
+            conn.execute(insert(FighterFeaturesCurrent), batch)
         conn.execute(
             LoadRun.__table__.update()
             .where(LoadRun.id == run_id)

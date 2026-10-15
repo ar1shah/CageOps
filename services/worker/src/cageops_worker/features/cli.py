@@ -1,7 +1,8 @@
 """The feature command line: `uv run python -m cageops_worker.features <command>`.
 
-  rebuild  recompute every fight_features row from scratch (one transaction)
-  show     print one fighter's feature rows in date order
+  rebuild    recompute every fight_features and fighter_features_current row (one transaction)
+  show       print one fighter's feature rows in date order
+  stats-gap  who has completed fights with no per-round stats, and why (read-only)
 
 Exit codes match the ingest CLI: 0 ok, 1 error (nothing found, a build check failed), 2 bad usage
 (argparse), or a name that matches more than one fighter.
@@ -22,6 +23,7 @@ from cageops_common.config import get_settings
 from cageops_common.db.session import make_engine
 from cageops_common.inference.asof import app_today
 from cageops_worker.features.build import FeatureBuildError, rebuild
+from cageops_worker.features.stats_gap import format_report, stats_gap
 from cageops_worker.seed.normalize import normalize_name
 
 PROG = "python -m cageops_worker.features"
@@ -73,7 +75,30 @@ def build_parser() -> argparse.ArgumentParser:
     who.add_argument("--fighter", metavar="NAME", help="fighter name (accents and case ignored)")
     who.add_argument("--fighter-id", type=int, metavar="ID", help="use when a name is ambiguous")
     show.add_argument("--json", action="store_true", help="print every column as JSON")
+
+    gap = commands.add_parser(
+        "stats-gap",
+        help="fighters whose rates miss fights that have no per-round stats (read-only)",
+    )
+    gap.add_argument(
+        "--since",
+        type=date.fromisoformat,
+        default=None,
+        metavar="YYYY-MM-DD",
+        help="also count fighters with a completed fight on or after this date "
+        "(2026-05-17 reproduces the 406 in the ROADMAP)",
+    )
+    gap.add_argument("--json", action="store_true", help="print the report as JSON")
     return parser
+
+
+def cmd_stats_gap(engine: Engine, args: argparse.Namespace, out: IO[str]) -> int:
+    report = stats_gap(engine, args.since)
+    if args.json:
+        print(json.dumps(report, indent=2), file=out)
+    else:
+        print(format_report(report), file=out)
+    return EXIT_OK
 
 
 def cmd_rebuild(engine: Engine, args: argparse.Namespace, out: IO[str]) -> int:
@@ -145,7 +170,7 @@ def cmd_show(engine: Engine, args: argparse.Namespace, out: IO[str]) -> int:
     return EXIT_OK
 
 
-COMMANDS = {"rebuild": cmd_rebuild, "show": cmd_show}
+COMMANDS = {"rebuild": cmd_rebuild, "show": cmd_show, "stats-gap": cmd_stats_gap}
 
 
 def main(

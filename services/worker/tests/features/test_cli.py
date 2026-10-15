@@ -24,9 +24,9 @@ def documented_commands() -> list[str]:
     return [line for line in lines if line.startswith(PREFIX)]
 
 
-def test_the_runbook_documents_both_commands():
+def test_the_runbook_documents_every_command():
     verbs = {shlex.split(c)[len(PREFIX.split())] for c in documented_commands()}
-    assert verbs == {"rebuild", "show"}
+    assert verbs == {"rebuild", "show", "stats-gap"}
 
 
 @pytest.mark.parametrize("command", documented_commands())
@@ -41,13 +41,16 @@ def test_documented_command_parses(command):
 def test_the_claude_md_commands_parse_too():
     text = (DOCS.parent / "CLAUDE.md").read_text(encoding="utf-8")
     lines = re.findall(r"`(uv run python -m cageops_worker\.features [^`]*)`", text)
-    assert len(lines) == 2
+    assert len(lines) == 3
     parser = build_parser()
     args = parser.parse_args(["rebuild", "--today", "2026-10-06"])
     assert args.today == date(2026, 10, 6)
     # CLAUDE.md writes the two ways to pick a fighter as "--fighter NAME | --fighter-id N"
     assert parser.parse_args(["show", "--fighter", "A B"]).fighter == "A B"
     assert parser.parse_args(["show", "--fighter-id", "7", "--json"]).fighter_id == 7
+    assert parser.parse_args(["stats-gap", "--since", "2026-05-17", "--json"]).since == date(
+        2026, 5, 17
+    )
 
 
 def test_show_needs_exactly_one_way_to_pick_a_fighter():
