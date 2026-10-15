@@ -484,8 +484,8 @@ def test_a_prediction_is_counted_and_timed_by_stage(app, client):
     predict(client, ANN, HAL)
 
     assert counter(app, "api_predictions_total", endpoint="predict") == 2
-    for stage in ("db", "assemble", "model", "serialize"):
-        assert counter(app, "api_predict_stage_seconds_count", stage=stage) >= 2, stage
+    for stage in ("db", "assemble", "model", "build", "serialize"):
+        assert counter(app, "api_predict_stage_seconds_count", stage=stage) == 2, stage
 
 
 def test_the_number_of_contributed_features_follows_the_setting(db, model_dir, clock, world):

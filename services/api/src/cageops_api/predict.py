@@ -265,7 +265,7 @@ def predict_matchup(
             weight_class, top_n,
         )  # fmt: skip
 
-    with stage(metrics, "serialize"):
+    with stage(metrics, "build"):
         quality = {i: fighter_quality(rows[i], live[i]) for i in ids}
         stale_names = [names[i] for i in (lo_id, hi_id) if not quality[i].features_current]
         core = PredictionCore(

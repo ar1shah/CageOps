@@ -147,7 +147,8 @@ class ApiMetrics:
         )
         self.stage_seconds = Histogram(
             "api_predict_stage_seconds",
-            "Where a prediction spends its time: db, assemble, model, serialize.",
+            "Where a prediction spends its time: db, assemble, model, build (the response object) "
+            "and serialize (the JSON).",
             ["stage"],
             buckets=STAGE_BUCKETS,
             registry=self.registry,
