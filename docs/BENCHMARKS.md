@@ -107,6 +107,41 @@ predictions were committed before any run, so the results can contradict them.
 - D (warm cache, no network): 4 workers 2.5-4x faster than 1, limited by Postgres and the machine, not a limiter.
 - E (rerun on a full database): 0 rows inserted, 0 updated, only unchanged; 0 requests.
 
+### Phase 2b-1: fighter name search (D-040) and the stats-gap counts (D-039)
+- Date: 2026-10-15
+- Hardware: Intel Core i9-13900KF (32 logical CPUs), 31 GiB RAM, WSL2 (Linux 6.18.54.1-microsoft-standard-WSL2); Python 3.12.14; Postgres 16.12 (`pgvector/pgvector:0.8.1-pg16`) in Docker on the same machine; warm cache, no other load.
+- Commit: `d72ee77` plus the commit that adds this entry. Database: 2,760 fighters, features build `load_runs.id` 38.
+- Command (the scan): `docker compose exec -T postgres psql -U cageops -d cageops -At -c "EXPLAIN (ANALYZE) SELECT id, name FROM fighters WHERE name ILIKE '%silva%'"`, ten times.
+- Command (the endpoint's query): `cageops_api.queries.search_fighters(conn, q, limit=20, offset=0)` called 200 times per query on one connection after 20 warm-up calls, timed with `time.perf_counter` in a short script (the query only: no HTTP, no JSON, no pool wait).
+- Result:
+
+| what | value |
+|---|---|
+| bare `ILIKE '%silva%'` as a sequential scan, 27 matches of 2,760 rows | Execution Time 0.74 to 0.86 ms over 10 runs (planning 0.27 ms) |
+| `search_fighters("silva")`, 27 matches | median 3.15 ms, p95 3.82 ms |
+| `search_fighters("alex")`, 39 matches | median 3.33 ms, p95 4.06 ms |
+| `search_fighters("jon jones")`, 1 match | median 2.25 ms, p95 2.57 ms |
+
+- Notes: D-040's first draft said 0.55 ms from one earlier `EXPLAIN ANALYZE`; ten runs on the same data gave 0.74 to 0.86 ms, so the entry says that. The endpoint's query costs more than the scan because each of the (up to 20) returned rows also looks up its current division, fight count and last fight date. These are database times for one process on one machine, not request latency: the HTTP numbers come from the 2b-2 load test.
+
+### Phase 2b-1: the stats-gap counts D-039 quotes
+- Date: 2026-10-15
+- Hardware: not a timing; counts do not depend on it.
+- Commit: `d72ee77` plus the commit that adds this entry. History through 2026-10-03; features build `load_runs.id` 38.
+- Command: `uv run python -m cageops_worker.features stats-gap --since 2026-05-17` (read-only)
+- Result:
+
+| what | value |
+|---|---|
+| completed fights | 8,779 |
+| completed fights without per-round stats (both sides needed) | 245: 224 with a Wikipedia result, 21 with a ufcstats result |
+| fighters with a completed fight | 2,760 |
+| fighters whose rates miss at least one fight | 442: 406 only Wikipedia-sourced, 36 only ufcstats-era (1990s), 0 both |
+| fighters with a completed fight on or after 2026-05-17 | 406 (the ROADMAP query, which counts them whether or not the fight has stats) |
+| of those, with a fight lacking stats | 406 |
+
+- Notes: the 406 matches the number the ROADMAP carry-over quotes for 2026-10-14. The test-slice log losses `data_quality.known_effect` quotes (0.6878 over 223 fights, 0.6566 over 330) are the Phase 2a entry above and are not re-measured here.
+
 ### Phase 2a: model quality against the baselines (real data, model version `20261014-225801`)
 - Date: 2026-10-14
 - Hardware: the same machine as below (Intel Core i9-13900KF, WSL2). Not a performance number; quality does not depend on it.

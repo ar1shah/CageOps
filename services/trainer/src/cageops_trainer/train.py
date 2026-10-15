@@ -22,29 +22,26 @@ import lightgbm
 import numpy as np
 from sqlalchemy import Engine
 
-from cageops_trainer import baselines, metrics, registry
-from cageops_trainer.dataset import Dataset, FeatureBuild, check_features, load_dataset
-from cageops_trainer.features import (
+from cageops_common.inference.bundle import write_bundle
+from cageops_common.inference.features import (
     CATEGORICAL_COLUMNS,
-    EXCLUDED_COLUMNS,
     METHOD_FEATURE_NAMES,
     NUMERIC_FEATURES,
     SCHEDULE_FEATURE_NAMES,
     WIN_FEATURE_NAMES,
-    fit_vocabulary,
     method_matrix,
-    random_swap,
-    swap_sides,
     win_loss_matrix,
 )
-from cageops_trainer.model import (
-    METHOD_CLASSES,
-    MethodModel,
-    WinLossModel,
-    fit,
-    params_for,
-    save_booster,
+from cageops_common.inference.model import METHOD_CLASSES, MethodModel, WinLossModel
+from cageops_trainer import baselines, metrics, registry
+from cageops_trainer.dataset import Dataset, FeatureBuild, check_features, load_dataset
+from cageops_trainer.features import (
+    EXCLUDED_COLUMNS,
+    fit_vocabulary,
+    random_swap,
+    swap_sides,
 )
+from cageops_trainer.model import fit, params_for
 from cageops_trainer.splits import (
     Boundaries,
     SplitIndices,
@@ -493,10 +490,16 @@ def run_training(
     # ---- artifacts and the registry row ----
     bundle.mkdir(parents=True)
     try:
-        artifacts = {
-            "win_loss.txt": save_booster(win_model.booster, bundle / "win_loss.txt"),
-            "method.txt": save_booster(method_model.booster, bundle / "method.txt"),
-        }
+        data_cutoff = max(data.event_date[i] for i in splits.train)
+        # Both model files and the manifest, through the same writer the API's tests use. The
+        # checksums it returns are what the registry row stores, so the two cannot disagree.
+        artifacts = write_bundle(
+            bundle,
+            version=version,
+            data_cutoff=data_cutoff,
+            win_model=win_model,
+            method_model=method_model,
+        ).files_sha256
         config = _config(
             seed=seed,
             data=data,
@@ -508,25 +511,6 @@ def run_training(
             swapped=swapped,
             artifacts=artifacts,
         )
-        data_cutoff = max(data.event_date[i] for i in splits.train)
-        manifest = {
-            "version": version,
-            "data_cutoff": data_cutoff.isoformat(),
-            "method_classes": list(METHOD_CLASSES),
-            "win_loss": {
-                "file": "win_loss.txt",
-                "feature_names": list(WIN_FEATURE_NAMES),
-                "vocabulary": win_model.vocab.as_dict(),
-            },
-            "method": {
-                "file": "method.txt",
-                "feature_names": list(METHOD_FEATURE_NAMES),
-                "vocabulary": method_model.vocab.as_dict(),
-            },
-            "numeric_features": list(NUMERIC_FEATURES),
-            "files_sha256": artifacts,
-        }
-        (bundle / "manifest.json").write_text(json.dumps(manifest, indent=2, sort_keys=True))
         # Strict JSON: a NaN would be rejected by Postgres JSONB far from the cause, so fail here,
         # naming the field. (default=str turns dates and numpy scalars into plain values.)
         report = json.loads(json.dumps(report, allow_nan=False, default=_plain))

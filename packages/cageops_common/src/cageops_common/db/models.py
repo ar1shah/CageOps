@@ -390,6 +390,72 @@ class FightFeatures(Base):
     load_run_id: Mapped[int] = mapped_column(ForeignKey("load_runs.id"))
 
 
+class FighterFeaturesCurrent(Base):
+    """One row per fighter: what was known before `built_as_of`, for predictions as of today
+    (D-037). Written by the same build as `fight_features`, in the same transaction.
+
+    History-derived columns are as of `built_as_of`. The two calendar-dependent features
+    (`age_days`, `days_since_last_fight`) are NOT stored: their inputs are (`dob`,
+    `last_fight_date`), and `cageops_common.inference.asof.date_relative_features` derives them
+    for the date being asked about, so a stored value can never be a day out of date.
+    """
+
+    __tablename__ = "fighter_features_current"
+
+    fighter_id: Mapped[int] = mapped_column(ForeignKey("fighters.id"), primary_key=True)
+    built_as_of: Mapped[date]
+    last_fight_date: Mapped[date | None]
+    dob: Mapped[date | None]
+
+    # career window
+    sig_str_landed_pm_career: Mapped[float | None]
+    sig_str_absorbed_pm_career: Mapped[float | None]
+    sig_str_acc_career: Mapped[float | None]
+    sig_str_def_career: Mapped[float | None]
+    td_landed_per15_career: Mapped[float | None]
+    td_def_career: Mapped[float | None]
+    sub_att_per15_career: Mapped[float | None]
+    kd_per15_career: Mapped[float | None]
+    n_fights_career: Mapped[int]
+    n_fights_with_stats_career: Mapped[int]
+    n_fights_with_duration_career: Mapped[int]
+    # last3 window
+    sig_str_landed_pm_last3: Mapped[float | None]
+    sig_str_absorbed_pm_last3: Mapped[float | None]
+    sig_str_acc_last3: Mapped[float | None]
+    sig_str_def_last3: Mapped[float | None]
+    td_landed_per15_last3: Mapped[float | None]
+    td_def_last3: Mapped[float | None]
+    sub_att_per15_last3: Mapped[float | None]
+    kd_per15_last3: Mapped[float | None]
+    n_fights_last3: Mapped[int]
+    n_fights_with_stats_last3: Mapped[int]
+    n_fights_with_duration_last3: Mapped[int]
+    # last5 window
+    sig_str_landed_pm_last5: Mapped[float | None]
+    sig_str_absorbed_pm_last5: Mapped[float | None]
+    sig_str_acc_last5: Mapped[float | None]
+    sig_str_def_last5: Mapped[float | None]
+    td_landed_per15_last5: Mapped[float | None]
+    td_def_last5: Mapped[float | None]
+    sub_att_per15_last5: Mapped[float | None]
+    kd_per15_last5: Mapped[float | None]
+    n_fights_last5: Mapped[int]
+    n_fights_with_stats_last5: Mapped[int]
+    n_fights_with_duration_last5: Mapped[int]
+
+    prior_ufc_fights: Mapped[int]
+    win_streak: Mapped[int | None]
+    finish_rate: Mapped[float | None]
+    height_cm: Mapped[float | None]
+    reach_cm: Mapped[float | None]
+    stance: Mapped[str | None] = mapped_column(Text)
+    has_unresolved_prior_fight: Mapped[bool]
+
+    built_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    load_run_id: Mapped[int] = mapped_column(ForeignKey("load_runs.id"))
+
+
 class ModelVersion(Base):
     """One trained, evaluated model bundle (win/loss + method together). The registry (D-033).
 

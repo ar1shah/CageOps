@@ -7,10 +7,12 @@ user would see."""
 import numpy as np
 import pytest
 
+from cageops_common.inference import features as inf
+from cageops_common.inference.model import MethodModel, WinLossModel
 from cageops_trainer import features as f
-from cageops_trainer.model import MethodModel, WinLossModel, fit, params_for
+from cageops_trainer.model import fit, params_for
 
-N = len(f.NUMERIC_FEATURES)
+N = len(inf.NUMERIC_FEATURES)
 
 
 @pytest.fixture(scope="module")
@@ -32,22 +34,22 @@ def models():
     y = (won_first ^ swap).astype(int)
 
     ordered = f.fit_vocabulary(sa, sb, wc, ordered=True)
-    x = f.win_loss_matrix(a2, b2, sa2, sb2, wc, ordered)
+    x = inf.win_loss_matrix(a2, b2, sa2, sb2, wc, ordered)
     win = WinLossModel(
         fit(
             x[:450], y[:450], x[450:], y[450:],
-            feature_names=f.WIN_FEATURE_NAMES, params=params_for("binary", 0),
+            feature_names=inf.WIN_FEATURE_NAMES, params=params_for("binary", 0),
         ),
         ordered,
     )  # fmt: skip
 
     unordered = f.fit_vocabulary(sa, sb, wc, ordered=False)
     method_y = rng.integers(0, 3, n)
-    xm = f.method_matrix(a, b, sa, sb, wc, unordered)
+    xm = inf.method_matrix(a, b, sa, sb, wc, unordered)
     method = MethodModel(
         fit(
             xm[:450], method_y[:450], xm[450:], method_y[450:],
-            feature_names=f.METHOD_FEATURE_NAMES,
+            feature_names=inf.METHOD_FEATURE_NAMES,
             params=params_for("multiclass", 0, num_class=3),
         ),
         unordered,

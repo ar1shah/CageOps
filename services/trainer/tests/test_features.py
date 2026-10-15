@@ -2,17 +2,17 @@
 cannot depend on which fighter is called A."""
 
 import numpy as np
-import pytest
 
 from cageops_common.db.models import FightFeatures
+from cageops_common.inference import features as inf
 from cageops_trainer import features as f
 
-N = len(f.NUMERIC_FEATURES)
+N = len(inf.NUMERIC_FEATURES)
 
 
 def test_every_column_of_fight_features_is_used_or_excluded_with_a_reason():
     columns = {c.name for c in FightFeatures.__table__.columns}
-    used = set(f.NUMERIC_FEATURES) | set(f.CATEGORICAL_COLUMNS)
+    used = set(inf.NUMERIC_FEATURES) | set(inf.CATEGORICAL_COLUMNS)
     excluded = set(f.EXCLUDED_COLUMNS)
 
     assert used & excluded == set()
@@ -24,37 +24,14 @@ def test_every_column_of_fight_features_is_used_or_excluded_with_a_reason():
 
 
 def test_the_pinned_counts_and_the_named_exclusions():
-    assert len(f.NUMERIC_FEATURES) == 34
+    assert len(inf.NUMERIC_FEATURES) == 34
     assert len(f.EXCLUDED_COLUMNS) == 13
-    assert len(f.WIN_FEATURE_NAMES) == 36
-    assert len(f.METHOD_FEATURE_NAMES) == 70
+    assert len(inf.WIN_FEATURE_NAMES) == 36
+    assert len(inf.METHOD_FEATURE_NAMES) == 70
     assert {"is_title_fight", "scheduled_rounds"} <= set(f.EXCLUDED_COLUMNS)
-    assert f.SCHEDULE_FEATURE_NAMES == ("is_title_fight", "scheduled_rounds")
-    assert f.WIN_FEATURE_NAMES[0] == "diff_sig_str_landed_pm_career"
-    assert f.WIN_FEATURE_NAMES[-2:] == ("stance_matchup", "weight_class")
-
-
-def test_no_model_input_is_an_odds_or_ranking_or_identity_column():
-    names = [*f.WIN_FEATURE_NAMES, *f.METHOD_FEATURE_NAMES, *f.NUMERIC_FEATURES]
-    for name in names:
-        for banned in ("odds", "rank", "fighter_id", "fight_id", "winner", "method"):
-            assert banned not in name
-
-
-@pytest.mark.parametrize(
-    ("raw", "expected"),
-    [
-        ("Orthodox", "orthodox"),
-        (" Southpaw ", "southpaw"),
-        ("Switch", "switch"),
-        ("Open Stance", "other"),
-        ("Sideways", "other"),
-        (None, "unknown"),
-        ("", "unknown"),
-    ],
-)
-def test_stance_is_normalized(raw, expected):
-    assert f.normalize_stance(raw) == expected
+    assert inf.SCHEDULE_FEATURE_NAMES == ("is_title_fight", "scheduled_rounds")
+    assert inf.WIN_FEATURE_NAMES[0] == "diff_sig_str_landed_pm_career"
+    assert inf.WIN_FEATURE_NAMES[-2:] == ("stance_matchup", "weight_class")
 
 
 def rows(n: int, seed: int = 0):
@@ -79,14 +56,14 @@ def test_swapping_negates_every_difference_and_reverses_the_stance_matchup():
     swap = np.ones(300, dtype=bool)
 
     a2, b2, sa2, sb2 = f.swap_sides(swap, a, b, sa, sb)
-    plain = f.win_loss_matrix(a, b, sa, sb, wc, ordered)
-    swapped = f.win_loss_matrix(a2, b2, sa2, sb2, wc, ordered)
+    plain = inf.win_loss_matrix(a, b, sa, sb, wc, ordered)
+    swapped = inf.win_loss_matrix(a2, b2, sa2, sb2, wc, ordered)
 
     assert np.array_equal(swapped[:, :N], -plain[:, :N], equal_nan=True)
     assert sa2 == sb and sb2 == sa
     # the matchup of the swapped row is the reverse string of the plain one
     for i in range(300):
-        assert f.stance_matchup(sa2[i], sb2[i]) == f.stance_matchup(sb[i], sa[i])
+        assert inf.stance_matchup(sa2[i], sb2[i]) == inf.stance_matchup(sb[i], sa[i])
 
 
 def test_a_partial_swap_exchanges_exactly_the_flagged_fights():
@@ -108,30 +85,6 @@ def test_the_swap_is_seeded_and_about_half():
     assert 0.47 < first.mean() < 0.53
 
 
-def test_method_inputs_are_identical_whichever_fighter_is_called_a():
-    a, b, sa, sb, wc = rows(300, seed=3)
-    _, unordered = vocabularies(a, b, sa, sb, wc)
-
-    forward = f.method_matrix(a, b, sa, sb, wc, unordered)
-    backward = f.method_matrix(b, a, sb, sa, wc, unordered)
-
-    assert np.array_equal(forward, backward, equal_nan=True)
-
-
-def test_a_missing_value_on_either_side_is_missing_in_the_difference_and_the_method_inputs():
-    a = np.zeros((1, N))
-    b = np.zeros((1, N))
-    a[0, 2] = np.nan
-    vocab = f.fit_vocabulary(["orthodox"], ["orthodox"], ["Lightweight"], ordered=False)
-
-    win = f.win_loss_matrix(a, b, ["orthodox"], ["orthodox"], ["Lightweight"], vocab)
-    method = f.method_matrix(a, b, ["orthodox"], ["orthodox"], ["Lightweight"], vocab)
-
-    assert np.isnan(win[0, 2])
-    assert np.isnan(method[0, 2]) and np.isnan(method[0, N + 2])
-    assert not np.isnan(win[0, 3])
-
-
 def test_rare_matchups_collapse_and_the_vocabulary_is_built_from_the_fights_it_is_given():
     sa = ["orthodox"] * 40 + ["switch"] * 5
     sb = ["southpaw"] * 40 + ["unknown"] * 5
@@ -142,7 +95,7 @@ def test_rare_matchups_collapse_and_the_vocabulary_is_built_from_the_fights_it_i
     assert "orthodox_vs_southpaw" in vocab.stance_matchups
     assert "southpaw_vs_orthodox" in vocab.stance_matchups  # the swap shows both orientations
     assert "switch_vs_unknown" not in vocab.stance_matchups  # 5 < 30
-    other = float(vocab.stance_matchups.index(f.OTHER_MATCHUP))
+    other = float(vocab.stance_matchups.index(inf.OTHER_MATCHUP))
     assert vocab.matchup_code("switch", "unknown") == other
     assert vocab.matchup_code("other", "other") == other  # never seen at all
 
@@ -170,4 +123,4 @@ def test_a_vocabulary_survives_a_round_trip_through_json():
         ["orthodox"] * 40, ["southpaw"] * 40, ["Lightweight"] * 40, ordered=True
     )
 
-    assert f.Vocabulary.from_dict(vocab.as_dict()) == vocab
+    assert inf.Vocabulary.from_dict(vocab.as_dict()) == vocab

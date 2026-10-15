@@ -24,9 +24,9 @@ def documented_commands() -> list[str]:
     return [line for line in lines if line.startswith(PREFIX)]
 
 
-def test_the_runbook_documents_both_commands():
+def test_the_runbook_documents_every_command():
     verbs = {shlex.split(c)[len(PREFIX.split())] for c in documented_commands()}
-    assert verbs == {"rebuild", "show"}
+    assert verbs == {"rebuild", "show", "stats-gap"}
 
 
 @pytest.mark.parametrize("command", documented_commands())
@@ -41,13 +41,16 @@ def test_documented_command_parses(command):
 def test_the_claude_md_commands_parse_too():
     text = (DOCS.parent / "CLAUDE.md").read_text(encoding="utf-8")
     lines = re.findall(r"`(uv run python -m cageops_worker\.features [^`]*)`", text)
-    assert len(lines) == 2
+    assert len(lines) == 3
     parser = build_parser()
     args = parser.parse_args(["rebuild", "--today", "2026-10-06"])
     assert args.today == date(2026, 10, 6)
     # CLAUDE.md writes the two ways to pick a fighter as "--fighter NAME | --fighter-id N"
     assert parser.parse_args(["show", "--fighter", "A B"]).fighter == "A B"
     assert parser.parse_args(["show", "--fighter-id", "7", "--json"]).fighter_id == 7
+    assert parser.parse_args(["stats-gap", "--since", "2026-05-17", "--json"]).since == date(
+        2026, 5, 17
+    )
 
 
 def test_show_needs_exactly_one_way_to_pick_a_fighter():
@@ -86,6 +89,22 @@ def test_rebuild_prints_a_json_report(world):
     assert code == 0
     report = json.loads(out)
     assert (report["rows"], report["today"]) == (6, "2030-01-01")
+
+
+def test_rebuild_without_today_uses_the_app_timezone_date_not_the_host_clock(world, monkeypatch):
+    """`today` decides which scheduled bouts are upcoming and what the current-feature rows are
+    as of (D-037); it must be the same date the API uses, in APP_TIMEZONE."""
+    from cageops_worker.features import cli as cli_module
+
+    career(world)
+    seen = []
+    monkeypatch.setattr(cli_module, "app_today", lambda tz: seen.append(tz) or date(2031, 2, 3))
+
+    code, out = run(world, "rebuild")
+
+    assert code == 0
+    assert json.loads(out)["today"] == "2031-02-03"
+    assert seen == ["America/New_York"]
 
 
 def test_a_failed_rebuild_exits_1_and_prints_the_report_on_stderr(world, monkeypatch, capsys):

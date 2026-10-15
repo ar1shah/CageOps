@@ -12,6 +12,8 @@ from dataclasses import dataclass
 from datetime import date
 from typing import Literal
 
+from cageops_common.inference.asof import date_relative_features
+
 Result = Literal["win", "loss", "draw", "no_contest", "unknown"]
 
 # Windows over a fighter's prior fights, most recent last: None means all of them.
@@ -179,14 +181,14 @@ def compute_features(
         chosen = prior if size is None else prior[-size:]
         for name, value in window_features(chosen).items():
             row[f"{name}_{window}"] = value
+    # The two calendar-dependent features come from the one function the API also calls (D-037).
+    row |= date_relative_features(
+        subject.event_date, subject.dob, prior[-1].event_date if prior else None
+    )
     row |= {
         "prior_ufc_fights": len(prior),
         "win_streak": win_streak(prior),
         "finish_rate": finish_rate(prior),
-        "days_since_last_fight": (subject.event_date - prior[-1].event_date).days
-        if prior
-        else None,
-        "age_days": (subject.event_date - subject.dob).days if subject.dob else None,
         "height_cm": subject.height_cm,
         "reach_cm": subject.reach_cm,
         "stance": subject.stance,

@@ -10,8 +10,8 @@ import numpy as np
 import pytest
 from sqlalchemy import text
 
+from cageops_common.inference.model import METHOD_CLASSES
 from cageops_trainer.dataset import load_dataset
-from cageops_trainer.model import METHOD_CLASSES
 from cageops_trainer.train import run_training
 
 NOW = datetime(2030, 1, 1, 12, 0, 0, tzinfo=UTC)
@@ -247,7 +247,7 @@ def test_odds_and_rankings_are_never_model_inputs(trained):
         and json.dumps(trained.metrics)
     )
     assert names  # the report exists
-    from cageops_trainer.features import METHOD_FEATURE_NAMES, WIN_FEATURE_NAMES
+    from cageops_common.inference.features import METHOD_FEATURE_NAMES, WIN_FEATURE_NAMES
 
     for feature in (*WIN_FEATURE_NAMES, *METHOD_FEATURE_NAMES):
         assert "odds" not in feature and "rank" not in feature
