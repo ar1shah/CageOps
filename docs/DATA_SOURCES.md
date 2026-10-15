@@ -130,7 +130,7 @@ Why:
 2. **Do not load the "golden" features.** Same reason. Your Phase 1c pipeline builds features; using someone else's rolling stats would make the leakage test meaningless.
 3. **Odds for the baseline.** CLAUDE.md requires a betting-favorite baseline. mdabbert has per-fight closing odds back to 2010, already joined to bouts. Store them in an `odds` table, attribute CC BY 4.0 in the README, and never use them as model features (keeps the "not a betting tool" framing honest).
 4. **Rankings.** jerzyszocik rankings history is CC0, Feb 2013 onward, and updated 2026-09-24, fresher than martj42 (2026-06-06).
-5. **Gap fill.** Silver stops at roughly 2026-06-10. The Phase 1b scraper backfills June through today, which is a natural demo of idempotent upserts.
+5. **Gap fill (corrected 2026-10-14; this line originally assumed the scraper could reach ufcstats).** The silver file's last fight is 2026-05-16 (the file is dated 2026-06-10 and has not been refreshed since). ufcstats.com has been behind a proof-of-work bot challenge since 2026-10-03 and we do not bypass it (D-013, D-025), so the Phase 1b backfill has only been proven against the local replay server (D-026, BENCHMARKS.md), never against the real site. Fights from 2026-05-17 on come from English Wikipedia (D-028, D-029): results only, no per-round stats, so they count in a fighter's history but not in the rate features (D-027).
 
 Interview angle: "I seeded from a CC0 snapshot of the same source I scrape, so seed and live data share one schema, and I computed every feature myself so I could prove there was no leakage."
 
