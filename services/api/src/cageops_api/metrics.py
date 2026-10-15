@@ -37,14 +37,27 @@ class PoolCollector:
     """Reads the connection pool at scrape time, so the numbers are never stale and nothing has
     to update them. `engine` is a callable because the engine is built when the app starts."""
 
-    def __init__(self, engine: Callable[[], Engine | None]) -> None:
+    def __init__(
+        self,
+        engine: Callable[[], Engine | None],
+        peak: Callable[[], int | None] | None = None,
+    ) -> None:
         self._engine = engine
+        self._peak = peak
 
     def collect(self) -> Iterable[GaugeMetricFamily]:
         engine = self._engine()
         pool = getattr(engine, "pool", None)
         if pool is None or not hasattr(pool, "checkedout"):
             return
+        peak = self._peak() if self._peak is not None else None
+        if peak is not None:
+            family = GaugeMetricFamily(
+                "api_db_pool_checked_out_peak",
+                "Most connections checked out at once since the previous scrape.",
+            )
+            family.add_metric([], peak)
+            yield family
         for name, doc, value in (
             ("api_db_pool_checked_out", "Connections in use right now.", pool.checkedout()),
             ("api_db_pool_checked_in", "Pooled connections sitting idle.", pool.checkedin()),
@@ -205,5 +218,9 @@ class ApiMetrics:
             registry=self.registry,
         )
 
-    def watch_pool(self, engine: Callable[[], Engine | None]) -> None:
-        self.registry.register(PoolCollector(engine))
+    def watch_pool(
+        self,
+        engine: Callable[[], Engine | None],
+        peak: Callable[[], int | None] | None = None,
+    ) -> None:
+        self.registry.register(PoolCollector(engine, peak))

@@ -142,6 +142,27 @@ predictions were committed before any run, so the results can contradict them.
 
 - Notes: the 406 matches the number the ROADMAP carry-over quotes for 2026-10-14. The test-slice log losses `data_quality.known_effect` quotes (0.6878 over 223 fights, 0.6566 over 330) are the Phase 2a entry above and are not re-measured here.
 
+### Phase 2b-2: API load test, PREDICTIONS (written before the runs, 2026-10-15)
+- Written: 2026-10-15, before the first measured run, and committed before it (D-026's practice).
+- **Disclosure:** the harness was exercised once before this was written, with an 8 s cold run at 16 VUs, to find bugs in it. That run was valid and showed about 204 req/s, predict p50 about 76 ms, p95 about 105 ms, a connection pool at its ceiling (peak 10 of 5+5) and a database stage averaging about 42 ms. **The cold and pool predictions below are therefore informed by it** and are not blind. Every other prediction was made without a measurement of that scenario. The dry run's record is kept in `data/bench/api/dryrun/` and is not part of the results.
+- Setup being predicted: the API image from this repo (one uvicorn process, 40-thread pool, pool 5+5 unless stated) in compose, Postgres 16 and Redis 7.4 in compose, k6 2.3.0 on the compose network, one machine (i9-13900KF, WSL2), 30 s runs, `cageops_loadtest` database (the dev data plus a synthetic 3-card, 36-bout upcoming list), 60,000 unique same-division pairs, a 500-pair warm set.
+
+| run | prediction | why |
+|---|---|---|
+| `cold_16` (16 VUs, every pair new) | about 200 req/s (range 150 to 260); predict p50 about 75 ms, p95 about 110 ms; the database stage is more than half of server time (it includes the wait for a pooled connection), the model about 20%, Redis about 5 to 10% | the dry run; four queries, two of which scan `completed_fights` per request, plus TreeSHAP in both orders |
+| `warm_16_off_1` (16 VUs, 500 pairs, all hits, limiter off) | about 800 req/s (range 500 to 1,200); p50 about 18 ms, p95 about 30 ms | a hit is routing, a Redis GET, a flip and JSON, about 1.2 ms of one Python process's time; at 16 VUs p50 is roughly 16 over the throughput |
+| `warm_16_on` (limiter on, a limit nobody reaches) | **a service time about 0.3 to 0.7 ms per request higher than limiter off**, so about 15% fewer req/s (range 5 to 30%); p50 about 3 ms higher at 16 VUs, p95 about 5 ms higher | one more Redis round trip (an `EVALSHA`) and one thread hop per request |
+| `warm_16_off_2` (limiter off again) | within 10% of `warm_16_off_1` | to see how much the machine drifts between adjacent runs |
+| `mixed_16` | about 430 req/s (range 300 to 600); predict p50 slower than warm, search and profile p50 about 15 to 30 ms | an average service time of about 2.3 ms: 48% cached predicts at 1.2 ms, 12% new pairs at about 5 ms, searches and profiles at 3 to 4 ms |
+| `rate_warm` (50% of warm peak, open model) | predict p50 about 3 ms, p95 about 8 ms, p99 under 20 ms; no dropped iterations | no queueing at half load |
+| `rate_cold` (50% of cold peak) | predict p50 about 20 ms, p95 about 45 ms | an uncontended cold request is about 12 to 18 ms of server time |
+| `pool_64_5_5` (cold, 64 VUs) | throughput about the same as `cold_16` (the pool is the limit), predict p50 about 300 ms, pool wait p95 in the hundreds of ms, peak checked out 10, **0 timeouts** (the 30 s timeout is never reached) | 64 clients, 10 connections |
+| `pool_64_10_10` | 10 to 25% more req/s than 5+5, pool wait p95 down by more than half, peak 20 | more connections, until something else saturates |
+| `pool_64_20_20` | within 10% of 10+10 (the single process or Postgres is the limit by then); peak well under 40 | the gain saturates |
+
+- **The cold/warm gap**, predicted: a throughput ratio of about 4 to 5 times, with the difference being the database stage (four queries and a pooled connection) and the model (TreeSHAP in both orderings), which a hit skips entirely; a hit still pays routing, Redis and JSON.
+- **The pool recommendation rule**, fixed now so it cannot bend to the results: choose the smallest `DB_POOL_SIZE` + `DB_MAX_OVERFLOW` for which, at the heaviest tested load, pool-wait p95 is under 5 ms or throughput is within 5% of the next size up, and the peak checked-out is at or under 80% of the ceiling. Keep the default if it already meets that at the load the API is expected to carry.
+
 ### Phase 2b-2: the API image's size (D-045)
 - Date: 2026-10-15
 - Hardware: Intel Core i9-13900KF (32 logical CPUs), 31 GiB RAM, WSL2 (Linux 6.18.54.1-microsoft-standard-WSL2); Docker 29.8.0 (Docker Desktop, containerd image store); `linux/amd64`.

@@ -50,7 +50,8 @@ services:
       # Inside the compose network the services are `postgres` and `redis`, not localhost.
       # API_DATABASE_URL points the API at another database (the load test uses cageops_loadtest).
       DATABASE_URL: ${API_DATABASE_URL:-postgresql://${POSTGRES_USER:?set POSTGRES_USER in .env}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:?set POSTGRES_DB in .env}}
-      REDIS_URL: redis://redis:6379/0
+      # API_REDIS_URL: the load test uses its own Redis database so it can empty it safely.
+      REDIS_URL: ${API_REDIS_URL:-redis://redis:6379/0}
       MODEL_ARTIFACT_DIR: /models
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
       APP_TIMEZONE: ${APP_TIMEZONE:-America/New_York}
@@ -83,6 +84,28 @@ services:
       redis:
         condition: service_healthy
     restart: unless-stopped
+
+  # The load generator (D-046). It joins the compose network and calls the API by its service
+  # name, so no traffic leaves the machine and nothing needs `--network host`:
+  #
+  #   docker compose --profile api --profile loadtest run --rm k6 run /scripts/api.js
+  #
+  # `scripts/loadtest/run_loadtest.py` drives the whole matrix and writes data/bench/api/.
+  k6:
+    profiles: ["loadtest"]
+    image: grafana/k6:2.3.0@sha256:9c2dee7f8ed74d317e4027c06a10f169b625638189de8d4555d0b3486a5aeb34
+    entrypoint: ["k6"]
+    user: "${LOADTEST_UID:-1000}:${LOADTEST_GID:-1000}" # so it can write the results directory
+    environment:
+      BASE_URL: http://api:8000
+      K6_NO_USAGE_REPORT: "true"
+      K6_NO_COLOR: "true"
+    volumes:
+      - ./scripts/loadtest:/scripts:ro
+      - ./data/bench/api:/results
+    depends_on:
+      api:
+        condition: service_healthy
 
 volumes:
   pgdata:

@@ -192,7 +192,12 @@ def create_app(
     )
     app.state.metrics = metrics
     app.state.clock = clock or (lambda: datetime.now(UTC))
-    metrics.watch_pool(lambda: getattr(app.state, "engine", None))
+    metrics.watch_pool(
+        lambda: getattr(app.state, "engine", None),
+        peak=lambda: (
+            database.take_peak() if (database := getattr(app.state, "database", None)) else None
+        ),
+    )
     # Added last is outermost: the request context wraps the limiter, so a 429 is timed,
     # labelled with its route template and logged like any other response.
     app.add_middleware(RateLimitMiddleware)
