@@ -9,7 +9,7 @@ Not affiliated with the UFC. Not betting advice.
 Phase 0 (scaffold) and Phase 1 (data pipeline: 1a seed data, 1b live ingestion, 1c point-in-time features, 1d a results source that permits automated access): complete and merged. 1b was tested and benchmarked against a local replay server only; it has never run against the real ufcstats.com, which is behind a bot challenge we do not bypass (see D-013). English Wikipedia's event articles fill the 2026-05-17 to 2026-10-03 gap (18 events, 224 fights, results only, no per-round stats; D-028, D-029). See [docs/ROADMAP.md](docs/ROADMAP.md).
 
 - [x] uv workspace with `cageops_common` and scraper / worker / api / trainer stubs
-- [x] API with a working `/healthz`
+- [x] API with a working `/healthz` (grown in 2b-1; see below)
 - [x] Local Postgres 16 (pgvector) + Redis 7 via docker compose
 - [x] ruff + pytest, one test per package
 - [x] CI: lint, format, tests, compose validation on every PR (passing on PR #1)
@@ -20,7 +20,9 @@ Phase 0 (scaffold) and Phase 1 (data pipeline: 1a seed data, 1b live ingestion, 
   - [x] 1d: a second results source: English Wikipedia event articles (`/wiki/` pages only, robots-compliant), per-source keys and `result_source` so ufcstats always wins, spelling-variant names held for review; the summer 2026 gap loaded with results only (D-025, D-028, D-029)
 - [ ] Phase 2: model, API, first deploy
   - [x] 2a: LightGBM win/loss and method models on time-based splits, scored against the betting favorite and an experience/ranking heuristic (the model **loses to the favorite**, see [docs/BENCHMARKS.md](docs/BENCHMARKS.md)), versions in a Postgres registry with one active version enforced by the database, training refuses stale features (D-031, D-032, D-033)
-  - [ ] 2b: prediction API
+  - [ ] 2b: prediction API, in two PRs
+    - [x] 2b-1: shared inference module (training and serving build one model input; the API image carries no training code), `fighter_features_current` and the date-relative features derived for the date asked about, a model manager that verifies the active bundle and hot-reloads by polling, `GET /fighters`, `GET /fighters/{id}`, `POST /predict` with top contributing features and a `data_quality` block that keeps "features current" apart from "rates complete", `/healthz`, `/readyz`, `/metrics` (D-035 to D-041)
+    - [ ] 2b-2: Redis cache, per-IP rate limiting (with a server-to-server path for the frontend), `GET /events/upcoming`, Dockerfile and compose, load test
   - [ ] 2c: first deploy
 - [ ] Phase 3: frontend
 - [ ] Phase 4: RAG writeups
@@ -31,7 +33,7 @@ Phase 0 (scaffold) and Phase 1 (data pipeline: 1a seed data, 1b live ingestion, 
 
 Seed data: 8,555 fights, 774 events, 2,686 fighters, 40,244 per-round stat rows, plus odds and rankings from named sources. Counts and file hashes are in [docs/DATA_SOURCES.md](docs/DATA_SOURCES.md). Odds from the "Ultimate UFC Dataset" by Matt Dabbert are used under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) (converted from American to decimal odds and matched to fights), as a betting-favorite baseline only and never as model features.
 
-Known gaps (intentional, scheduled later): the API has no `/metrics` endpoint yet (Phase 2b; the ingestion worker has one), no service Dockerfiles yet (Phase 2b; the trainer's image will need `libgomp1` for LightGBM), `is_title_fight` and `scheduled_rounds` are not model features until upcoming bouts get them (D-032), the betting-favorite comparison covers only 241 of the 553 test fights and none of the 223 from 2026-05-17, because mdabbert odds end 2026-03-28 (together with the jerzyszocik daily odds dataset 478 would be covered, including 162 of those 223; that loader is deferred to Phase 5, D-034), no per-round stats for fights after 2026-05-16 until the ufcstats operator can let us past the bot challenge (D-025); those fights come from Wikipedia and count in a fighter's history but not in the rate features. If ufcstats access returns, an adoption step is still needed to merge Wikipedia-created rows with ufcstats' (D-029).
+Known gaps (intentional, scheduled later): the API has no cache, rate limit or `/events/upcoming` yet and there is no Dockerfile (2b-2; the API image needs `libgomp1` for LightGBM), the database holds no scheduled bouts because the only source of upcoming cards is ufcstats (D-025) so `/events/upcoming` will be empty on real data, rebuilding `fight_features` / `fighter_features_current` is not scheduled so `data_quality.features_current` is false for anyone whose newest result was ingested after the last build (Phase 5), `is_title_fight` and `scheduled_rounds` are not model features until upcoming bouts get them (D-032), the betting-favorite comparison covers only 241 of the 553 test fights and none of the 223 from 2026-05-17, because mdabbert odds end 2026-03-28 (together with the jerzyszocik daily odds dataset 478 would be covered, including 162 of those 223; that loader is deferred to Phase 5, D-034), no per-round stats for fights after 2026-05-16 until the ufcstats operator can let us past the bot challenge (D-025); those fights come from Wikipedia and count in a fighter's history but not in the rate features. If ufcstats access returns, an adoption step is still needed to merge Wikipedia-created rows with ufcstats' (D-029).
 
 ## Quickstart
 
@@ -45,6 +47,15 @@ uv run pytest
 scripts/download_seed.sh
 uv run alembic -c packages/cageops_common/alembic.ini upgrade head
 uv run python -m cageops_worker.seed
+
+# build features, train, activate a model, and ask it something
+uv run python -m cageops_worker.features rebuild
+uv run python -m cageops_trainer train
+uv run python -m cageops_trainer activate <version from `list`>
+uv run --package cageops-api uvicorn cageops_api.main:app --port 8000 --no-proxy-headers --no-access-log
+curl -s localhost:8000/readyz
+curl -s -X POST localhost:8000/predict -H 'content-type: application/json' \
+  -d '{"fighter_a_id": 194, "fighter_b_id": 147}'   # ids from GET /fighters?search=
 ```
 
 More commands are in [docs/RUNBOOK.md](docs/RUNBOOK.md). Design decisions are in [docs/DECISIONS.md](docs/DECISIONS.md).

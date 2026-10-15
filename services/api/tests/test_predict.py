@@ -190,6 +190,14 @@ def test_no_response_carries_odds_or_anything_that_reads_like_a_pick(client):
     assert "not betting advice" in text
 
 
+def test_the_disclaimer_is_exactly_this_sentence(client):
+    body = predict(client, ANN, BOB).json()
+
+    assert (
+        body["disclaimer"] == "A statistical estimate based on past UFC fights. Not betting advice."
+    )
+
+
 # -- as-of date ---------------------------------------------------------------------------------
 
 

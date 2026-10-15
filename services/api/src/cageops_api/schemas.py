@@ -223,10 +223,7 @@ class PredictResponse(BaseModel):
     top_features: list[FeatureContribution]
     matchup: Matchup
     data_quality: DataQuality
-    disclaimer: str = (
-        "A statistical estimate from past fights. Not betting advice, and not a prediction "
-        "of any single fight."
-    )
+    disclaimer: str = "A statistical estimate based on past UFC fights. Not betting advice."
 
     model_config = ConfigDict(
         json_schema_extra={
