@@ -7,6 +7,8 @@ double-register) a series.
 
 from __future__ import annotations
 
+from collections.abc import Callable, Iterable
+
 from prometheus_client import (
     CollectorRegistry,
     Counter,
@@ -15,6 +17,8 @@ from prometheus_client import (
     PlatformCollector,
     ProcessCollector,
 )
+from prometheus_client.core import GaugeMetricFamily
+from sqlalchemy import Engine
 
 # 1 ms to 5 s. A warm cached prediction should land in the first few buckets and a cold one in
 # the 10-100 ms range, so the resolution is concentrated there (percentiles are interpolated
@@ -22,6 +26,38 @@ from prometheus_client import (
 LATENCY_BUCKETS = (0.001, 0.0025, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0)
 
 UNMATCHED = "unmatched"  # the route label for a path no route matched (404s and scanners)
+
+# Waiting for a free pooled connection is usually microseconds; when the pool is the bottleneck it
+# is the whole story, so the buckets reach well past the request histogram's.
+POOL_WAIT_BUCKETS = (0.0001, 0.0005, 0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1.0, 5.0, 30.0)
+STAGE_BUCKETS = (0.0001, 0.00025, 0.0005, 0.001, 0.0025, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25)
+
+
+class PoolCollector:
+    """Reads the connection pool at scrape time, so the numbers are never stale and nothing has
+    to update them. `engine` is a callable because the engine is built when the app starts."""
+
+    def __init__(self, engine: Callable[[], Engine | None]) -> None:
+        self._engine = engine
+
+    def collect(self) -> Iterable[GaugeMetricFamily]:
+        engine = self._engine()
+        pool = getattr(engine, "pool", None)
+        if pool is None or not hasattr(pool, "checkedout"):
+            return
+        for name, doc, value in (
+            ("api_db_pool_checked_out", "Connections in use right now.", pool.checkedout()),
+            ("api_db_pool_checked_in", "Pooled connections sitting idle.", pool.checkedin()),
+            ("api_db_pool_size", "Configured steady-state pool size.", pool.size()),
+            (
+                "api_db_pool_overflow",
+                "Connections open beyond pool_size (negative: pool not yet filled).",
+                pool.overflow(),
+            ),
+        ):
+            family = GaugeMetricFamily(name, doc)
+            family.add_metric([], value)
+            yield family
 
 
 class ApiMetrics:
@@ -76,3 +112,46 @@ class ApiMetrics:
         )
         for result in ("success", "failure"):
             self.reloads.labels(result)  # exposed at 0 so a rate() has something to start from
+
+        # -- the database pool (D-045) ------------------------------------------------------
+        self.pool_wait = Histogram(
+            "api_db_pool_checkout_seconds",
+            "Time spent waiting for a pooled database connection.",
+            buckets=POOL_WAIT_BUCKETS,
+            registry=self.registry,
+        )
+        self.pool_timeouts = Counter(
+            "api_db_pool_checkout_timeouts_total",
+            "Requests that gave up waiting for a connection (answered 503).",
+            registry=self.registry,
+        )
+
+        # -- predictions (D-038, D-039) -----------------------------------------------------
+        self.predictions = Counter(
+            "api_predictions_total",
+            "Predictions served, by endpoint.",
+            ["endpoint"],
+            registry=self.registry,
+        )
+        self.predictions_stats_gap = Counter(
+            "api_predictions_with_stats_gap_total",
+            "Predictions served where at least one fighter's rates miss a fight with no "
+            "per-round stats (a nonzero stats_gap_fights).",
+            registry=self.registry,
+        )
+        self.predictions_stale = Counter(
+            "api_predictions_features_stale_total",
+            "Predictions served where a fighter has a completed fight the features do not "
+            "include (features_current is false).",
+            registry=self.registry,
+        )
+        self.stage_seconds = Histogram(
+            "api_predict_stage_seconds",
+            "Where a prediction spends its time: db, assemble, model, serialize.",
+            ["stage"],
+            buckets=STAGE_BUCKETS,
+            registry=self.registry,
+        )
+
+    def watch_pool(self, engine: Callable[[], Engine | None]) -> None:
+        self.registry.register(PoolCollector(engine))

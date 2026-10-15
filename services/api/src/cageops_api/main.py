@@ -11,8 +11,9 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
+from datetime import UTC, datetime
 
 from fastapi import FastAPI, Request, Response
 from fastapi.responses import JSONResponse
@@ -20,9 +21,12 @@ from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 from sqlalchemy import Engine
 
 from cageops_api.config import ApiSettings, get_api_settings
+from cageops_api.db import Database
+from cageops_api.errors import install_error_handlers
 from cageops_api.metrics import ApiMetrics
 from cageops_api.middleware import RequestContextMiddleware
 from cageops_api.model_manager import ModelManager, ModelUnavailable
+from cageops_api.routers import fighters
 from cageops_common.config import Settings, get_settings
 from cageops_common.db.session import make_engine
 from cageops_common.logs import configure_logging
@@ -45,10 +49,12 @@ def create_app(
     engine: Engine | None = None,
     configure_logs: bool = True,
     poll: bool = True,
+    clock: Callable[[], datetime] | None = None,
 ) -> FastAPI:
     """Build the app. Arguments exist for tests; the real app passes none and reads the
     environment inside the lifespan, not here. `poll=False` starts no background poller (a test
-    then calls `app.state.model_manager.refresh()` itself)."""
+    then calls `app.state.model_manager.refresh()` itself). `clock` returns an aware datetime;
+    it is how tests pin "today"."""
     metrics = ApiMetrics()
 
     @asynccontextmanager
@@ -65,9 +71,14 @@ def create_app(
         app.state.settings = common
         app.state.api_settings = own
         owned_engine = engine or make_engine(
-            common.database_url, pool_size=5, max_overflow=5, pool_pre_ping=True
+            common.database_url,
+            pool_size=own.db_pool_size,
+            max_overflow=own.db_max_overflow,
+            pool_timeout=own.db_pool_timeout_s,
+            pool_pre_ping=True,
         )
         app.state.engine = owned_engine
+        app.state.database = Database(owned_engine, metrics)
         manager = ModelManager(
             owned_engine,
             own.model_artifact_dir,
@@ -105,7 +116,11 @@ def create_app(
         lifespan=lifespan,
     )
     app.state.metrics = metrics
+    app.state.clock = clock or (lambda: datetime.now(UTC))
+    metrics.watch_pool(lambda: getattr(app.state, "engine", None))
     app.add_middleware(RequestContextMiddleware, metrics=metrics)
+    install_error_handlers(app)
+    app.include_router(fighters.router)
 
     @app.exception_handler(ModelUnavailable)
     async def model_unavailable(_: Request, exc: ModelUnavailable) -> JSONResponse:

@@ -161,3 +161,167 @@ def registry(db, model_dir) -> Registry:
 def tiny():
     """`tiny(seed) -> (WinLossModel, MethodModel)`: the models behind a registered version."""
     return tiny_models
+
+
+# -- a small league written straight into the tables the API reads ------------------------------
+
+from itertools import count  # noqa: E402
+
+
+class League:
+    """Fighters, events, completed and scheduled fights, per-fight totals, and
+    `fighter_features_current` rows, inserted with SQL. The API's tests never run the feature
+    builder (that is the worker's, and has its own tests): they write the rows it would write."""
+
+    def __init__(self, engine: Engine, registry: Registry):
+        self.engine = engine
+        self.run_id = registry.run_id
+        self._events = count(1)
+        self._fights = count(1)
+
+    def fighter(self, fighter_id: int, name: str, **bio) -> int:
+        with self.engine.begin() as conn:
+            conn.execute(
+                text(
+                    "INSERT INTO fighters (id, ufcstats_id, name, dob, height_cm, reach_cm, stance)"
+                    " VALUES (:id, :u, :n, :dob, :h, :r, :s)"
+                ),
+                {
+                    "id": fighter_id,
+                    "u": f"{fighter_id:016x}",
+                    "n": name,
+                    "dob": bio.get("dob", date(1990, 1, 1)),
+                    "h": bio.get("height_cm", 180.0),
+                    "r": bio.get("reach_cm", 183.0),
+                    "s": bio.get("stance", "Orthodox"),
+                },
+            )
+        return fighter_id
+
+    def fight(
+        self,
+        a: int,
+        b: int,
+        on: date,
+        *,
+        winner: int | None = None,
+        outcome: str | None = None,
+        method: str = "decision",
+        weight_class: str = "Lightweight",
+        source: str = "ufcstats",
+        title: bool = False,
+        finish_round: int = 3,
+        status: str = "completed",
+        stats: bool = False,
+    ) -> int:
+        n = next(self._fights)
+        e = next(self._events)
+        low, high = sorted((a, b))
+        done = status == "completed"
+        if done and outcome is None:
+            outcome = "win" if winner else "draw"
+        with self.engine.begin() as conn:
+            event_id = conn.execute(
+                text(
+                    "INSERT INTO events (ufcstats_id, name, event_date) VALUES (:u, :n, :d)"
+                    " RETURNING id"
+                ),
+                {"u": f"{e:016x}", "n": f"UFC Test {e}", "d": on},
+            ).scalar_one()
+            fight_id = conn.execute(
+                text(
+                    "INSERT INTO fights (ufcstats_id, event_id, fighter_a_id, fighter_b_id,"
+                    " weight_class, gender, status, is_title_fight, outcome, winner_id, method,"
+                    " scheduled_rounds, finish_round, finish_time_sec, has_round_stats,"
+                    " result_source) VALUES (:u, :e, :a, :b, :wc, 'M', :status, :title,"
+                    " :outcome, :winner, :method, 3, :fr, :ft, :stats, :src) RETURNING id"
+                ),
+                {
+                    "u": f"{n + 5000:016x}",
+                    "e": event_id,
+                    "a": low,
+                    "b": high,
+                    "wc": weight_class,
+                    "status": status,
+                    "title": title if done else None,
+                    "outcome": outcome if done else None,
+                    "winner": winner if done and outcome == "win" else None,
+                    "method": method if done else None,
+                    "fr": finish_round if done else None,
+                    "ft": 300 if done else None,
+                    "stats": stats and done,
+                    "src": source if done else None,
+                },
+            ).scalar_one()
+            if stats and done:
+                for fighter in (a, b):
+                    conn.execute(
+                        text(
+                            "INSERT INTO fight_totals (fight_id, fighter_id, sig_strikes_landed,"
+                            " sig_strikes_att, takedowns_landed, takedowns_att, submission_att,"
+                            " knockdowns) VALUES (:f, :p, 40, 80, 1, 3, 0, 0)"
+                        ),
+                        {"f": fight_id, "p": fighter},
+                    )
+        return fight_id
+
+    def current(
+        self,
+        fighter_id: int,
+        *,
+        n_fights: int,
+        n_with_stats: int | None = None,
+        last_fight: date | None = None,
+        as_of: date = date(2026, 10, 15),
+        seed: int | None = None,
+        **overrides,
+    ) -> None:
+        """A `fighter_features_current` row. Rates are deterministic noise from `seed` (the
+        fighter id by default); counts follow `n_fights` / `n_with_stats`."""
+        rng = np.random.default_rng(fighter_id if seed is None else seed)
+        n_with_stats = n_fights if n_with_stats is None else n_with_stats
+        row: dict = {name: float(rng.normal(3, 1)) for name in f.NUMERIC_FEATURES}
+        for window, size in (("career", None), ("last3", 3), ("last5", 5)):
+            n = n_fights if size is None else min(n_fights, size)
+            with_stats = min(n_with_stats, n)
+            row[f"n_fights_{window}"] = n
+            row[f"n_fights_with_stats_{window}"] = with_stats
+            row[f"n_fights_with_duration_{window}"] = with_stats
+        row["prior_ufc_fights"] = n_fights
+        row["win_streak"] = int(rng.integers(0, 4)) if n_fights else 0
+        row["finish_rate"] = float(rng.random()) if n_fights else None
+        if n_fights == 0:
+            for name in f.NUMERIC_FEATURES:
+                is_rate = ("_career" in name or "_last" in name) and not name.startswith("n_fights")
+                if is_rate:
+                    row[name] = None
+        for derived in ("age_days", "days_since_last_fight"):
+            row.pop(derived)  # never stored (D-037)
+        row |= overrides
+        columns = {
+            **row,
+            "fighter_id": fighter_id,
+            "built_as_of": as_of,
+            "last_fight_date": last_fight,
+            "has_unresolved_prior_fight": False,
+            "load_run_id": self.run_id,
+        }
+        with self.engine.begin() as conn:
+            fighter = conn.execute(
+                text("SELECT dob, height_cm, reach_cm, stance FROM fighters WHERE id = :i"),
+                {"i": fighter_id},
+            ).one()
+            columns.setdefault("dob", fighter.dob)
+            columns.setdefault("height_cm", fighter.height_cm)
+            columns.setdefault("reach_cm", fighter.reach_cm)
+            columns.setdefault("stance", fighter.stance)
+            names = ", ".join(columns)
+            binds = ", ".join(f":{k}" for k in columns)
+            conn.execute(
+                text(f"INSERT INTO fighter_features_current ({names}) VALUES ({binds})"), columns
+            )
+
+
+@pytest.fixture
+def league(db, registry) -> League:
+    return League(db, registry)

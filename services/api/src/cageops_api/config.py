@@ -28,6 +28,12 @@ class ApiSettings(BaseSettings):
     model_reload_retry_s: float = Field(default=300.0, ge=0)
     # How many contributing features /predict returns by default (D-038).
     predict_top_features: int = Field(default=5, ge=1, le=10)
+    # The database connection pool. These are the numbers SQLAlchemy would use anyway; real ones
+    # come from the 2b-2 load test, which is why `api_db_pool_*` is exposed (D-045).
+    db_pool_size: int = Field(default=5, ge=1)
+    db_max_overflow: int = Field(default=5, ge=0)
+    # Seconds a request waits for a free connection before it is answered 503.
+    db_pool_timeout_s: float = Field(default=30.0, gt=0)
 
 
 @lru_cache
