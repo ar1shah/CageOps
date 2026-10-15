@@ -38,7 +38,7 @@ from cageops_api.ratelimit import (
     RouteTemplates,
 )
 from cageops_api.redis_guard import RedisGuard
-from cageops_api.routers import fighters, predict
+from cageops_api.routers import events, fighters, predict
 from cageops_common.config import Settings, get_settings
 from cageops_common.db.session import make_engine
 from cageops_common.logs import configure_logging
@@ -200,6 +200,7 @@ def create_app(
     install_error_handlers(app)
     app.include_router(fighters.router)
     app.include_router(predict.router)
+    app.include_router(events.router)
 
     @app.exception_handler(ModelUnavailable)
     async def model_unavailable(_: Request, exc: ModelUnavailable) -> JSONResponse:

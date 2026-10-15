@@ -41,7 +41,8 @@ log = logging.getLogger(__name__)
 
 CACHE_SCHEMA = "v1"
 KEY_PREFIX = f"pred:{CACHE_SCHEMA}:"
-SOURCE_ADHOC = "adhoc"
+SOURCE_ADHOC = "adhoc"  # an ad-hoc matchup, features as of today
+SOURCE_BOUT = "bout"  # a scheduled bout, features as of its event date
 
 
 def slug(value: str | None) -> str:
@@ -61,16 +62,27 @@ def cache_key(
     fighter_a_id: int,
     fighter_b_id: int,
     weight_class: str | None,
-    scheduled_rounds: int,
-    is_title_fight: bool,
+    scheduled_rounds: int | None,
+    is_title_fight: bool | None,
     top_n: int,
     as_of: date,
+    source: str = SOURCE_ADHOC,
 ) -> str:
+    """`weight_class` None is "auto" for an ad-hoc request (resolved from the fighters' recent
+    bouts) and "none" for a scheduled bout whose card names no class. `scheduled_rounds` and
+    `is_title_fight` are None for a scheduled bout: ufcstats does not say before the fight (D-044),
+    and the key says "unknown" rather than a value."""
     lo, hi = sorted((fighter_a_id, fighter_b_id))
+    division = (
+        slug(weight_class)
+        if weight_class is not None
+        else ("none" if source == SOURCE_BOUT else "auto")
+    )
+    rounds = "x" if scheduled_rounds is None else str(scheduled_rounds)
+    title = "x" if is_title_fight is None else str(int(is_title_fight))
     return (
-        f"{KEY_PREFIX}{model_version}:{build_id}:{inputs_sha12}:{lo}-{hi}:{slug(weight_class)}:"
-        f"{scheduled_rounds}:{int(is_title_fight)}:top{top_n}:asof={as_of.isoformat()}:"
-        f"src={SOURCE_ADHOC}"
+        f"{KEY_PREFIX}{model_version}:{build_id}:{inputs_sha12}:{lo}-{hi}:{division}:"
+        f"{rounds}:{title}:top{top_n}:asof={as_of.isoformat()}:src={source}"
     )
 
 
@@ -115,6 +127,44 @@ class PredictionCache:
             return None, "miss"
         self.metrics.cache_hits.inc()
         return core, "hit"
+
+    def get_many(self, keys: list[str]) -> tuple[list[PredictionCore | None], str]:
+        """One round trip for every key. The status is "hit" (all), "miss" (none), "partial", or
+        "bypass" (Redis unavailable: nothing was asked, every entry is None)."""
+        if self.client is None or not keys or not self.guard.available():
+            self.metrics.cache_bypassed.inc(len(keys) or 1)
+            return [None] * len(keys), "bypass"
+        try:
+            raws = self.client.mget(keys)
+        except FAIL_OPEN as exc:
+            self.guard.failed("cache_get", exc)
+            self.metrics.cache_bypassed.inc(len(keys))
+            return [None] * len(keys), "bypass"
+        cores: list[PredictionCore | None] = []
+        for key, raw in zip(keys, raws, strict=True):
+            core = None
+            if raw is not None:
+                try:
+                    core = PredictionCore.model_validate_json(raw)
+                except ValueError:
+                    self.metrics.redis_errors.labels("cache_decode").inc()
+                    log.warning("cache entry could not be decoded; recomputing", extra={"key": key})
+            cores.append(core)
+            (self.metrics.cache_hits if core is not None else self.metrics.cache_misses).inc()
+        found = sum(c is not None for c in cores)
+        status = "hit" if found == len(cores) else "miss" if found == 0 else "partial"
+        return cores, status
+
+    def set_many(self, items: list[tuple[str, PredictionCore]]) -> None:
+        if self.client is None or not items or not self.guard.available():
+            return
+        try:
+            pipe = self.client.pipeline(transaction=False)
+            for key, core in items:
+                pipe.set(key, core.model_dump_json(), ex=self.ttl_s)
+            pipe.execute()
+        except FAIL_OPEN as exc:
+            self.guard.failed("cache_set", exc)
 
     def set(self, key: str, core: PredictionCore) -> None:
         if self.client is None or not self.guard.available():

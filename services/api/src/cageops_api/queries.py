@@ -224,3 +224,60 @@ def completed_fight_counts(conn: Connection, ids: Sequence[int], before: date) -
     )
     found = {r.fid: int(r.n) for r in rows}
     return {i: found.get(i, 0) for i in ids}
+
+
+# -- upcoming bouts ---------------------------------------------------------------------------
+
+
+def scheduled_bouts(conn: Connection, today: date) -> list[dict[str, Any]]:
+    """Every scheduled bout on an event dated today or later, in card order of the database
+    (event date, then fight id). `fights` keeps the smaller fighter id first, so a bout's two
+    sides are already in canonical order."""
+    rows = conn.execute(
+        text(
+            """
+            SELECT f.id AS fight_id, f.fighter_a_id, f.fighter_b_id,
+                   f.weight_class, f.is_title_fight, f.scheduled_rounds,
+                   ev.id AS event_id, ev.name AS event_name, ev.event_date
+              FROM fights f JOIN events ev ON ev.id = f.event_id
+             WHERE f.status = 'scheduled' AND ev.event_date >= :today
+             ORDER BY ev.event_date, f.id
+            """
+        ),
+        {"today": today},
+    ).mappings()
+    return [dict(r) for r in rows]
+
+
+def bout_feature_rows(
+    conn: Connection, fight_ids: Sequence[int]
+) -> dict[tuple[int, int], dict[str, Any]]:
+    """`fight_features` rows keyed (fight_id, fighter_id): each fighter's history as of the
+    bout's own event date, written by the last features build."""
+    rows = conn.execute(
+        text("SELECT * FROM fight_features WHERE fight_id = ANY(:ids)"), {"ids": list(fight_ids)}
+    ).mappings()
+    return {(r["fight_id"], r["fighter_id"]): dict(r) for r in rows}
+
+
+def completed_counts_before(
+    conn: Connection, pairs: Sequence[tuple[int, date]]
+) -> dict[tuple[int, date], int]:
+    """For each (fighter, date): that fighter's completed fights strictly before the date.
+    One round trip for any number of pairs."""
+    if not pairs:
+        return {}
+    rows = conn.execute(
+        text(
+            """
+            SELECT p.fid, p.d,
+                   (SELECT count(*) FROM completed_fights cf
+                      JOIN events ev ON ev.id = cf.event_id
+                     WHERE (cf.fighter_a_id = p.fid OR cf.fighter_b_id = p.fid)
+                       AND ev.event_date < p.d) AS n
+              FROM unnest(CAST(:fids AS int[]), CAST(:dates AS date[])) AS p(fid, d)
+            """
+        ),
+        {"fids": [p[0] for p in pairs], "dates": [p[1] for p in pairs]},
+    )
+    return {(r.fid, r.d): int(r.n) for r in rows}

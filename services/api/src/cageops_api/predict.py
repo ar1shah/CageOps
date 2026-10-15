@@ -80,14 +80,39 @@ class PredictionCore(BaseModel):
     contributions: list[CoreContribution]
     quality_lo: FighterQuality
     quality_hi: FighterQuality
-    weight_class: str
-    weight_class_source: str
-    scheduled_rounds: int
-    is_title_fight: bool
+    # An ad-hoc matchup has all four. A scheduled bout has the card's class and NULL for the
+    # schedule: ufcstats does not say before the fight (D-044).
+    weight_class: str | None
+    weight_class_source: str  # "request" | "both_fighters_recent_bouts" | "card"
+    scheduled_rounds: int | None
+    is_title_fight: bool | None
     as_of: date
     features_built_as_of: date
     features_build_id: int
     stale_names: list[str]
+
+
+def data_quality_block(
+    core: PredictionCore, q_a: FighterQuality, q_b: FighterQuality
+) -> DataQuality:
+    """The `data_quality` of a prediction, from the two fighters' own answers (D-039)."""
+    both_current = q_a.features_current and q_b.features_current
+    both_complete = q_a.rates_complete and q_b.rates_complete
+    return DataQuality(
+        features_current=both_current,
+        rates_complete=both_complete,
+        fighter_a=q_a,
+        fighter_b=q_b,
+        features_built_as_of=core.features_built_as_of,
+        features_build_id=core.features_build_id,
+        known_effect=None if both_complete else KNOWN_EFFECT,
+        stale_note=None
+        if both_current
+        else (
+            f"Completed fights are missing from the features of {', '.join(core.stale_names)}; "
+            "this estimate ignores them until the features are rebuilt."
+        ),
+    )
 
 
 def orient(core: PredictionCore, a_id: int) -> PredictResponse:
@@ -115,9 +140,8 @@ def orient(core: PredictionCore, a_id: int) -> PredictResponse:
                 favors="fighter_a" if phi > 0 else "fighter_b",
             )
         )
-    both_current = q_a.features_current and q_b.features_current
-    both_complete = q_a.rates_complete and q_b.rates_complete
-    stale = [] if both_current else core.stale_names
+    assert core.weight_class is not None and core.scheduled_rounds is not None
+    assert core.is_title_fight is not None  # an ad-hoc matchup always has its context
     return PredictResponse(
         fighter_a=first,
         fighter_b=second,
@@ -133,21 +157,7 @@ def orient(core: PredictionCore, a_id: int) -> PredictResponse:
             as_of=core.as_of,
             context_used_by_model=CONTEXT_USED_BY_MODEL,
         ),
-        data_quality=DataQuality(
-            features_current=both_current,
-            rates_complete=both_complete,
-            fighter_a=q_a,
-            fighter_b=q_b,
-            features_built_as_of=core.features_built_as_of,
-            features_build_id=core.features_build_id,
-            known_effect=None if both_complete else KNOWN_EFFECT,
-            stale_note=None
-            if both_current
-            else (
-                f"Completed fights are missing from the features of {', '.join(stale)}; "
-                "this estimate ignores them until the features are rebuilt."
-            ),
-        ),
+        data_quality=data_quality_block(core, q_a, q_b),
     )
 
 
@@ -315,9 +325,9 @@ def compute_core(
     return core
 
 
-def record_prediction(metrics: ApiMetrics, core: PredictionCore) -> None:
+def record_prediction(metrics: ApiMetrics, core: PredictionCore, endpoint: str = "predict") -> None:
     """Count one prediction served, whether it was computed or came from the cache."""
-    metrics.predictions.labels("predict").inc()
+    metrics.predictions.labels(endpoint).inc()
     if not (_no_gap(core.quality_lo) and _no_gap(core.quality_hi)):
         metrics.predictions_stats_gap.inc()
     if core.stale_names:
@@ -329,4 +339,107 @@ def _no_gap(q: FighterQuality) -> bool:
     return g.career == g.last3 == g.last5 == 0
 
 
-__all__ = ["PredictionCore", "compute_core", "orient", "record_prediction"]
+__all__ = [
+    "PredictionCore",
+    "compute_bout_cores",
+    "compute_core",
+    "data_quality_block",
+    "orient",
+    "record_prediction",
+]
+
+
+def compute_bout_cores(
+    *,
+    bouts: list[dict[str, Any]],
+    db: Database,
+    serving: ServingModel,
+    top_n: int,
+    metrics: ApiMetrics,
+) -> tuple[dict[int, PredictionCore | str], dict[int, str]]:
+    """Predict many scheduled bouts at once: the rows, the names and the freshness counts each
+    come from ONE query, and the model is called once per kind for the whole batch.
+
+    Returns (fight_id -> core, or the reason there is no prediction because no features were built
+    for that bout yet; fighter id -> name for every fighter in `bouts`). A bout's features are as
+    of its own event date, so its date-relative features were fixed when the build ran and cannot
+    go stale with the calendar (D-037)."""
+    ids = sorted({f for b in bouts for f in (b["fighter_a_id"], b["fighter_b_id"])})
+    with stage(metrics, "db"), db.connect() as conn:
+        names = queries.fighter_names(conn, ids)
+        rows = queries.bout_feature_rows(conn, [b["fight_id"] for b in bouts])
+        have = [
+            b
+            for b in bouts
+            if (b["fight_id"], b["fighter_a_id"]) in rows
+            and (b["fight_id"], b["fighter_b_id"]) in rows
+        ]
+        counts = queries.completed_counts_before(
+            conn,
+            sorted(
+                {(f, b["event_date"]) for b in have for f in (b["fighter_a_id"], b["fighter_b_id"])}
+            ),
+        )
+
+    result: dict[int, PredictionCore | str] = {
+        b["fight_id"]: "no features have been built for this bout yet (run `features rebuild`)"
+        for b in bouts
+        if b not in have
+    }
+    if not have:
+        return result, names
+
+    with stage(metrics, "assemble"):
+        side_a = [rows[(b["fight_id"], b["fighter_a_id"])] for b in have]
+        side_b = [rows[(b["fight_id"], b["fighter_b_id"])] for b in have]
+        a_values, a_stance = rows_to_arrays(side_a)
+        b_values, b_stance = rows_to_arrays(side_b)
+        classes = [r["weight_class"] for r in side_a]  # as of the build, like the rest of the row
+
+    with stage(metrics, "model"):
+        explained = explain_win(
+            serving.model.win_loss, a_values, b_values, a_stance, b_stance, classes
+        )
+        method = serving.model.method.predict(a_values, b_values, a_stance, b_stance, classes)
+
+    with stage(metrics, "build"):
+        for i, bout in enumerate(have):
+            a_id, b_id, day = bout["fighter_a_id"], bout["fighter_b_id"], bout["event_date"]
+            q_a = fighter_quality(side_a[i], counts[(a_id, day)])
+            q_b = fighter_quality(side_b[i], counts[(b_id, day)])
+            shown = top_contributions(
+                explained.contributions[i], a_values[i], b_values[i], a_stance[i], b_stance[i],
+                classes[i], top_n,
+            )  # fmt: skip
+            result[bout["fight_id"]] = PredictionCore(
+                lo=FighterRef(id=a_id, name=names[a_id]),
+                hi=FighterRef(id=b_id, name=names[b_id]),
+                p_lo=float(explained.p_a[i]),
+                method=MethodProbabilities(
+                    **{c: float(method[i][k]) for k, c in enumerate(METHOD_CLASSES)}
+                ),
+                model_version=serving.version,
+                contributions=[
+                    CoreContribution(
+                        feature=c.feature,
+                        kind=c.kind,
+                        value_lo=c.value_a,
+                        value_hi=c.value_b,
+                        contribution_lo=c.phi,
+                    )
+                    for c in shown
+                ],  # fmt: skip
+                quality_lo=q_a,
+                quality_hi=q_b,
+                weight_class=classes[i],
+                weight_class_source="card",
+                scheduled_rounds=bout["scheduled_rounds"],
+                is_title_fight=bout["is_title_fight"],
+                as_of=day,
+                features_built_as_of=day,
+                features_build_id=int(side_a[i]["load_run_id"]),
+                stale_names=[
+                    names[f] for f, q in ((a_id, q_a), (b_id, q_b)) if not q.features_current
+                ],
+            )
+    return result, names

@@ -265,3 +265,89 @@ class PredictResponse(BaseModel):
             ]
         }
     )
+
+
+# -- upcoming events --------------------------------------------------------------------------
+
+
+class UpcomingPrediction(BaseModel):
+    win_probability: WinProbability
+    method_probabilities: MethodProbabilities
+    data_quality: DataQuality = Field(
+        description="As of the bout's own event date (`features_built_as_of`)."
+    )
+
+
+class UpcomingBout(BaseModel):
+    fight_id: int
+    fighter_a: FighterRef
+    fighter_b: FighterRef
+    weight_class: str | None = Field(description="From the card.")
+    is_title_fight: bool | None = Field(
+        description="NULL: ufcstats does not say before the fight, and a default would be a guess "
+        "(D-044)."
+    )
+    scheduled_rounds: int | None = Field(description="NULL, for the same reason.")
+    prediction: UpcomingPrediction | None = Field(
+        description="NULL when no features were built for this bout yet (see unavailable_reason)."
+    )
+    unavailable_reason: str | None
+
+
+class UpcomingEvent(BaseModel):
+    event_id: int
+    name: str
+    event_date: date
+    bouts: list[UpcomingBout]
+
+
+class UpcomingResponse(BaseModel):
+    as_of: date = Field(description="Today in APP_TIMEZONE; events dated before it are not listed.")
+    model_version: str
+    events: list[UpcomingEvent]
+    disclaimer: str = "A statistical estimate based on past UFC fights. Not betting advice."
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "examples": [
+                {
+                    "as_of": "2026-10-15",
+                    "model_version": "20261014-225801",
+                    "events": [
+                        {
+                            "event_id": 12,
+                            "name": "UFC Fight Night: Example vs. Example",
+                            "event_date": "2026-10-17",
+                            "bouts": [
+                                {
+                                    "fight_id": 9001,
+                                    "fighter_a": {"id": 101, "name": "Example Fighter"},
+                                    "fighter_b": {"id": 202, "name": "Another Fighter"},
+                                    "weight_class": "Lightweight",
+                                    "is_title_fight": None,
+                                    "scheduled_rounds": None,
+                                    "prediction": {
+                                        "win_probability": {"fighter_a": 0.57, "fighter_b": 0.43},
+                                        "method_probabilities": {
+                                            "ko_tko": 0.31,
+                                            "submission": 0.18,
+                                            "decision": 0.51,
+                                        },
+                                        "data_quality": {
+                                            "features_current": True,
+                                            "rates_complete": True,
+                                            "features_built_as_of": "2026-10-17",
+                                            "features_build_id": 38,
+                                            "known_effect": None,
+                                            "stale_note": None,
+                                        },
+                                    },
+                                    "unavailable_reason": None,
+                                }
+                            ],
+                        }
+                    ],
+                }
+            ]
+        }
+    )
