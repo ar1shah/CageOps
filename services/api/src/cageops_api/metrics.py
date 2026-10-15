@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from prometheus_client import (
     CollectorRegistry,
+    Counter,
     Gauge,
     Histogram,
     PlatformCollector,
@@ -41,3 +42,37 @@ class ApiMetrics:
             "Requests being handled right now.",
             registry=self.registry,
         )
+
+        # -- the active model (D-036) -------------------------------------------------------
+        self.model_info = Gauge(
+            "api_model_info",
+            "1 for the model version being served. Cleared and reset on every switch.",
+            ["version", "features_output_sha256"],
+            registry=self.registry,
+        )
+        self.model_loaded = Gauge(
+            "api_model_loaded", "1 when a verified model is loaded.", registry=self.registry
+        )
+        self.reloads = Counter(
+            "api_model_reload_total",
+            "Model loads by outcome. The first load at startup counts too.",
+            ["result"],
+            registry=self.registry,
+        )
+        self.model_load_seconds = Gauge(
+            "api_model_load_seconds",
+            "How long the most recent successful load took, verification included.",
+            registry=self.registry,
+        )
+        self.active_in_db = Gauge(
+            "api_model_active_in_db",
+            "1 when the registry has an active version, 0 when it has none.",
+            registry=self.registry,
+        )
+        self.last_poll = Gauge(
+            "api_model_last_poll_timestamp_seconds",
+            "Unix time of the last registry poll that reached the database.",
+            registry=self.registry,
+        )
+        for result in ("success", "failure"):
+            self.reloads.labels(result)  # exposed at 0 so a rate() has something to start from

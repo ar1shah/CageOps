@@ -9,13 +9,18 @@ from fastapi.testclient import TestClient
 
 from cageops_api.main import create_app
 from cageops_common.config import Settings
+from cageops_common.db.session import make_engine
 
 
 @pytest.fixture
 def app():
+    # A database that is not there: nothing in these tests may need one.
+    dead = make_engine("postgresql://u:p@127.0.0.1:1/x", connect_args={"connect_timeout": 1})
     return create_app(
-        settings=Settings(database_url="postgresql://u:p@localhost/x", redis_url="redis://x"),
+        settings=Settings(database_url="postgresql://u:p@127.0.0.1:1/x", redis_url="redis://x"),
+        engine=dead,
         configure_logs=False,
+        poll=False,
     )
 
 
@@ -37,12 +42,12 @@ def test_healthz_is_ok_and_does_no_io(client):
     assert response.json() == {"status": "ok"}
 
 
-def test_readyz_is_503_with_a_reason_until_a_model_manager_says_otherwise(client):
+def test_readyz_is_503_with_a_reason_while_there_is_no_model_and_no_database(client):
     response = client.get("/readyz")
 
     assert response.status_code == 503
     assert response.json()["ready"] is False
-    assert response.json()["reason"]
+    assert "database unreachable" in response.json()["reason"]
 
 
 def test_the_docs_say_this_is_not_betting_advice_and_list_the_ops_routes(client):
@@ -147,8 +152,9 @@ def test_metrics_exposes_prometheus_text_and_is_not_in_the_docs(client):
 
 def test_two_apps_in_one_process_do_not_share_metrics():
     settings = Settings(database_url="postgresql://u:p@localhost/x", redis_url="redis://x")
-    first = create_app(settings=settings, configure_logs=False)
-    second = create_app(settings=settings, configure_logs=False)
+    dead = make_engine("postgresql://u:p@127.0.0.1:1/x", connect_args={"connect_timeout": 1})
+    first = create_app(settings=settings, engine=dead, configure_logs=False, poll=False)
+    second = create_app(settings=settings, engine=dead, configure_logs=False, poll=False)
     with TestClient(first) as c:
         c.get("/healthz")
 
