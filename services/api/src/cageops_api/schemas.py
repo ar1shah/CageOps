@@ -120,6 +120,7 @@ class PredictRequest(BaseModel):
     fighter_b_id: int = Field(ge=1)
     weight_class: str | None = Field(
         default=None,
+        max_length=40,
         description="Required when the two fighters' most recent divisions differ. Must be one "
         "of the classes the active model knows.",
     )

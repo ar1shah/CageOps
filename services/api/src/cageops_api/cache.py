@@ -49,6 +49,9 @@ FAIL_OPEN = (redis.exceptions.RedisError, OSError)
 
 
 def slug(value: str | None) -> str:
+    """A key segment from a division name. Callers pass a vocabulary entry (the router
+    normalizes first); the slug is a second line of defense, leaving only [a-z0-9-], so no
+    separator (":") or wildcard can ever come from a caller."""
     if value is None:
         return "auto"
     return re.sub(r"[^a-z0-9]+", "-", value.lower()).strip("-") or "auto"

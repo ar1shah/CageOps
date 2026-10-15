@@ -13,7 +13,14 @@ from cageops_api.errors import ErrorBody
 from cageops_api.features_watch import FeaturesWatch
 from cageops_api.metrics import ApiMetrics
 from cageops_api.model_manager import ModelManager
-from cageops_api.predict import PredictionCore, compute_core, orient, record_prediction, stage
+from cageops_api.predict import (
+    PredictionCore,
+    canonical_weight_class,
+    compute_core,
+    orient,
+    record_prediction,
+    stage,
+)
 from cageops_api.routers.fighters import get_database
 from cageops_api.schemas import PredictRequest, PredictResponse
 from cageops_common.inference.asof import app_today
@@ -65,6 +72,18 @@ def predict(
     serving = manager.require()  # one reference, used for this whole request (D-036)
     as_of = app_today(app.state.settings.app_timezone, now=app.state.clock())
     top_n = app.state.api_settings.predict_top_features
+
+    # Validate and normalize the division FIRST. The key then only ever holds a vocabulary entry:
+    # "  lightweight " and "Lightweight" are one entry, and a misspelling is a 422 on every request,
+    # never a hit on a neighbour's entry.
+    if body.weight_class is not None:
+        body = body.model_copy(
+            update={
+                "weight_class": canonical_weight_class(
+                    body.weight_class, serving.model.weight_classes
+                )
+            }
+        )
 
     # The key is built from the request and from facts polled in the background (model version,
     # features build, input fingerprint), so a hit costs no database round trip at all.

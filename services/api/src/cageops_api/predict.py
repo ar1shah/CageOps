@@ -170,6 +170,26 @@ def fighter_quality(row: dict[str, Any], live_fights: int) -> FighterQuality:
     )
 
 
+def canonical_weight_class(raw: str, known: tuple[str, ...]) -> str:
+    """The model's own spelling of a requested division, or a 422.
+
+    Case and runs of whitespace are forgiven ("  lightweight " is "Lightweight"); nothing else is:
+    no punctuation rewriting, no prefix matching. This runs BEFORE the cache key is built, so the
+    key only ever holds a vocabulary entry: two spellings of one division share one entry, a
+    misspelling is a 422 whether or not some other spelling is cached, and nothing a caller typed
+    can reach the key."""
+    squashed = " ".join(raw.split()).casefold()
+    for entry in known:
+        if entry.casefold() == squashed:
+            return entry
+    raise ApiError(
+        422,
+        "unknown_weight_class",
+        f"{raw[:40]!r} is not a weight class the model knows",
+        extra={"weight_classes": list(known)},
+    )
+
+
 def resolve_context(
     request: PredictRequest,
     names: dict[int, str],
@@ -182,14 +202,7 @@ def resolve_context(
     known = serving.model.weight_classes
 
     if request.weight_class is not None:
-        if request.weight_class not in known:
-            raise ApiError(
-                422,
-                "unknown_weight_class",
-                f"{request.weight_class!r} is not a weight class the model knows",
-                extra={"weight_classes": list(known)},
-            )
-        return request.weight_class, "request", rounds, is_title
+        return canonical_weight_class(request.weight_class, known), "request", rounds, is_title
 
     a, b = request.fighter_a_id, request.fighter_b_id
     div_a, div_b = divisions[a], divisions[b]

@@ -407,3 +407,53 @@ def test_the_cache_metrics_are_exposed(app, client):
                  "api_redis_errors_total", "api_features_build_id",
                  "api_features_inputs_match_build"):  # fmt: skip
         assert name in text_, name
+
+
+# -- the division in the key is the model's own spelling -----------------------------------------
+
+
+def test_two_spellings_of_one_division_share_one_entry(app, client, redis_client):
+    first = predict(client, ANN, BOB, weight_class="Lightweight")
+    second = predict(client, ANN, BOB, weight_class="  lightweight ")
+    third = predict(client, ANN, BOB, weight_class="LIGHTWEIGHT")
+    fourth = predict(client, ANN, BOB, weight_class="Lightweight\n")  # trailing whitespace
+
+    assert [r.status_code for r in (first, second, third, fourth)] == [200, 200, 200, 200]
+    assert first.headers["x-cache"] == "miss"
+    assert second.headers["x-cache"] == third.headers["x-cache"] == "hit"
+    assert fourth.headers["x-cache"] == "hit"
+    assert len(redis_client.keys(f"{KEY_PREFIX}*")) == 1
+    assert second.json() == first.json() == third.json()
+    assert first.json()["matchup"]["weight_class"] == "Lightweight"  # the model's spelling
+
+
+def test_a_misspelling_is_a_422_even_when_a_neighbouring_spelling_is_cached(app, client):
+    assert predict(client, ANN, BOB, weight_class="Lightweight").status_code == 200
+
+    for bad in ("Lightweigh", "Light weight", "Lightweight!", "Light-weight"):
+        response = predict(client, ANN, BOB, weight_class=bad)
+        assert response.status_code == 422, bad
+        assert response.json()["code"] == "unknown_weight_class"
+        assert "weight_classes" in response.json()
+
+
+@pytest.mark.parametrize(
+    "hostile", ["Lightweight:5", "*", "Light\nweight:", "pred:v1:*", "a" * 41, "../Lightweight"]
+)
+def test_nothing_a_caller_types_can_reach_the_key(app, client, redis_client, hostile):
+    predict(client, ANN, BOB, weight_class="Lightweight")  # one legitimate entry
+
+    response = predict(client, ANN, BOB, weight_class=hostile)
+
+    assert response.status_code == 422
+    keys = [k.decode() for k in redis_client.keys("*")]
+    assert len(keys) == 1 and all(k.startswith(KEY_PREFIX) for k in keys)
+    assert hostile not in keys[0]
+    assert keys[0].count(":") == cache_key(**BASE).count(":")  # the shape never changes
+
+
+def test_an_unspecified_division_is_a_different_entry_from_an_explicit_one(app, client):
+    predict(client, ANN, BOB)
+
+    assert predict(client, ANN, BOB, weight_class="Lightweight").headers["x-cache"] == "miss"
+    assert predict(client, ANN, BOB, weight_class="lightweight").headers["x-cache"] == "hit"
