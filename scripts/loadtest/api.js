@@ -44,7 +44,9 @@ export const options = (() => {
         rate: RATE,
         timeUnit: '1s',
         duration: DURATION,
-        preAllocatedVUs: Math.max(VUS, 32),
+        // a fast API needs few VUs, but k6 drops an iteration when none is free at the instant it
+        // is due; a generous pool makes "dropped" mean the generator, not the allocation
+        preAllocatedVUs: Math.max(VUS, 128),
         maxVUs: 512,
       },
     };

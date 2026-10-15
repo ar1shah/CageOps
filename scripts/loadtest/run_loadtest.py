@@ -51,12 +51,12 @@ class ApiConfig:
     limiter: bool = False
     pool_size: int = 5
     max_overflow: int = 5
-    pool_timeout_s: int = 30
+    pool_timeout_s: float = 30  # the default before this load test; see D-041 for what it became
 
     def label(self) -> str:
         return (
             f"limiter={'on' if self.limiter else 'off'} pool={self.pool_size}+{self.max_overflow}"
-            f" timeout={self.pool_timeout_s}s"
+            f" timeout={self.pool_timeout_s:g}s"
         )
 
 
@@ -69,6 +69,7 @@ class Run:
     rate_of: str | None = None  # name of the run whose rps this one's rate is half of
     set_: str = "warm"  # for scenario "rate": which pair set
     note: str = ""
+    expect_timeouts: bool = False  # a diagnostic that is MEANT to exhaust the pool
 
 
 def matrix() -> list[Run]:
@@ -96,6 +97,39 @@ def matrix() -> list[Run]:
         Run("pool_64_5_5", "cold", vus=64, config=ApiConfig(pool_size=5, max_overflow=5)),
         Run("pool_64_10_10", "cold", vus=64, config=ApiConfig(pool_size=10, max_overflow=10)),
         Run("pool_64_20_20", "cold", vus=64, config=ApiConfig(pool_size=20, max_overflow=20)),
+    ]
+
+
+def additions() -> list[Run]:
+    """Runs added after the first pass: the limiter's cost at an EQUAL arrival rate (an open model
+    shows what one request pays, where a closed loop shows throughput), and a diagnostic that
+    starves the pool on purpose to see the timeout path."""
+    on = ApiConfig(limiter=True)
+    return [
+        Run(
+            "rate_warm_on",
+            "rate",
+            rate_of="warm_16_off_1",
+            set_="warm",
+            config=on,
+            note="the same arrival rate as rate_warm, limiter ON",
+        ),  # fmt: skip
+        Run(
+            "pool_64_2_0_timeout_1s",
+            "cold",
+            vus=64,
+            config=ApiConfig(pool_size=2, max_overflow=0, pool_timeout_s=1),
+            expect_timeouts=True,
+            note="a pool far too small, to exercise the 503 database_busy path",
+        ),  # fmt: skip
+        Run(
+            "pool_64_2_0_timeout_50ms",
+            "cold",
+            vus=64,
+            config=ApiConfig(pool_size=2, max_overflow=0, pool_timeout_s=0.05),
+            expect_timeouts=True,
+            note="the same, with a 50 ms wait: the 1 s version never timed out",
+        ),
     ]
 
 
@@ -403,7 +437,17 @@ def execute(run: Run, duration: str, rates: dict[str, float], k6_rps: dict[str, 
     problems: list[str] = []
     predicts = endpoints.get("predict", {}).get("count", 0)
     hits, misses = server["cache"]["hits"], server["cache"]["misses"]
-    if k6_block["failed_rate"] > 0:
+    if run.expect_timeouts:
+        if not server["pool"]["timeouts"]:
+            problems.append("the pool was meant to be exhausted and no checkout timed out")
+        # every failure should be a pool timeout answered 503, and nothing else
+        failed_requests = round(k6_block["failed_rate"] * k6_block["requests"])
+        if failed_requests != server["pool"]["timeouts"]:
+            problems.append(
+                f"{failed_requests} requests failed but {server['pool']['timeouts']} checkouts "
+                "timed out"
+            )
+    elif k6_block["failed_rate"] > 0:
         problems.append(f"{k6_block['failed_rate']:.4%} of requests failed")
     if run.scenario == "cold":
         if hits != 0:
@@ -448,20 +492,25 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("--only", nargs="*", help="run names to run (default: the whole matrix)")
     parser.add_argument("--duration", default="30s")
-    parser.add_argument("--fresh", action="store_true", help="truncate results.jsonl first")
+    parser.add_argument("--fresh", action="store_true", help="truncate the results file first")
+    parser.add_argument("--results", type=Path, default=RESULTS)
     args = parser.parse_args()
+    results = args.results
 
     if not (RESULTS_DIR / "inputs.json").exists():
         raise SystemExit("run scripts/loadtest/make_inputs.py first")
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
     if args.fresh:
-        RESULTS.write_text("")
+        results.write_text("")
 
-    runs = [r for r in matrix() if not args.only or r.name in args.only]
+    runs = [r for r in matrix() + additions() if not args.only or r.name in args.only]
     # a rate run needs its parent's rps: take it from the results file if it was run earlier
     k6_rps: dict[str, float] = {}
-    if RESULTS.exists():
-        for line in RESULTS.read_text().splitlines():
+    # a rate run needs its parent's rps: the main results file has them even for a side file
+    for source in {RESULTS, results}:
+        if not source.exists():
+            continue
+        for line in source.read_text().splitlines():
             if line.strip():
                 rec = json.loads(line)
                 k6_rps[rec["name"]] = rec["k6"]["rps"]
@@ -474,7 +523,7 @@ def main() -> int:
             current = run.config
         print(f"run {run.name}: {run.scenario} vus={run.vus} for {args.duration}", flush=True)
         record = execute(run, args.duration, {}, k6_rps)
-        with RESULTS.open("a") as fh:
+        with results.open("a") as fh:
             fh.write(json.dumps(record) + "\n")
         flag = "valid" if record["valid"] else "INVALID: " + "; ".join(record["problems"])
         print(f"  {record['k6']['rps']} rps, predict p50/p95 (k6) "
