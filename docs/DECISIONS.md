@@ -448,7 +448,7 @@ Every meaningful design decision gets an entry. Format:
   1. `ILIKE '%q%'` as a sequential scan.
   2. `pg_trgm` with a GIN index on `lower(name)`, one migration and an extension.
   3. A normalized-name column with an index (accent folding), a migration and a backfill.
-- Decision: option 1. Measured on 2026-10-15 with `EXPLAIN ANALYZE` over 2,760 fighters: 0.55 ms. `%`, `_` and the escape character in the query are escaped so a search for `100%` is a search for those characters and cannot be turned into a wildcard scan. Exact match first, then names starting with the query, then the rest, each by name and id so paging is stable. `pg_trgm` is available in the image but not enabled.
+- Decision: option 1. Measured on 2026-10-15 over 2,760 fighters (BENCHMARKS.md, Phase 2b-1): the bare scan takes 0.74 to 0.86 ms, and the endpoint's whole query, with each returned row's division, fight count and last fight date, takes a median of 2.3 to 3.3 ms. `%`, `_` and the escape character in the query are escaped so a search for `100%` is a search for those characters and cannot be turned into a wildcard scan. Exact match first, then names starting with the query, then the rest, each by name and id so paging is stable. `pg_trgm` is available in the image but not enabled.
 - Tradeoff: accents are not folded ("Procházka" is not found by "prochazka"), and the query is linear in fighters. Revisit at about 50,000 fighters or a p95 over 10 ms; then option 2 is one migration (`CREATE EXTENSION pg_trgm` and a GIN index), and option 3 if accent folding matters first.
 
 ### D-041: API conventions: one error shape, route-template labels, per-app metrics, pool visibility
