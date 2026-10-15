@@ -14,11 +14,40 @@ from sqlalchemy import Connection, text
 
 from cageops_worker.features.compute import PriorFight, Result, Stats, fight_duration
 
-_FIGHT_COLUMNS = """
-    f.id AS fight_id, e.event_date, f.fighter_a_id, f.fighter_b_id, f.winner_id, f.outcome,
-    f.method, f.scheduled_rounds, f.finish_round, f.finish_time_sec, f.weight_class,
-    f.is_title_fight
-"""
+# What the builder reads, per table. The input fingerprint (cageops_common.db.fingerprint) must
+# cover every one of these; a test asserts it, so a new read can't silently escape the staleness
+# guard.
+FIGHT_COLUMNS = (
+    "id",
+    "fighter_a_id",
+    "fighter_b_id",
+    "winner_id",
+    "outcome",
+    "method",
+    "scheduled_rounds",
+    "finish_round",
+    "finish_time_sec",
+    "weight_class",
+    "is_title_fight",
+)
+EVENT_COLUMNS = ("event_date",)
+FIGHTER_COLUMNS = ("id", "dob", "height_cm", "reach_cm", "stance")
+TOTALS_COLUMNS = (
+    "fight_id",
+    "fighter_id",
+    "sig_strikes_landed",
+    "sig_strikes_att",
+    "takedowns_landed",
+    "takedowns_att",
+    "submission_att",
+    "knockdowns",
+)
+
+_FIGHT_COLUMNS = ", ".join(
+    ["f.id AS fight_id"]
+    + [f"e.{c}" for c in EVENT_COLUMNS]
+    + [f"f.{c}" for c in FIGHT_COLUMNS if c != "id"]
+)
 # `completed_fights` is the one door for finished fights (D-023); upcoming ones come from `fights`.
 _COMPLETED = f"SELECT {_FIGHT_COLUMNS} FROM completed_fights f JOIN events e ON e.id = f.event_id"
 _SCHEDULED = (
@@ -96,9 +125,7 @@ def load_history(conn: Connection) -> History:
     scheduled = [_record(r) for r in conn.execute(text(_SCHEDULED)).mappings()]
     bios = {
         r["id"]: Bio(r["dob"], r["height_cm"], r["reach_cm"], r["stance"])
-        for r in conn.execute(
-            text("SELECT id, dob, height_cm, reach_cm, stance FROM fighters")
-        ).mappings()
+        for r in conn.execute(text(f"SELECT {', '.join(FIGHTER_COLUMNS)} FROM fighters")).mappings()
     }
     totals = {
         (r["fight_id"], r["fighter_id"]): Stats(
@@ -110,10 +137,7 @@ def load_history(conn: Connection) -> History:
             knockdowns=r["knockdowns"],
         )
         for r in conn.execute(
-            text(
-                "SELECT fight_id, fighter_id, sig_strikes_landed, sig_strikes_att,"
-                " takedowns_landed, takedowns_att, submission_att, knockdowns FROM fight_totals"
-            )
+            text(f"SELECT {', '.join(TOTALS_COLUMNS)} FROM fight_totals")
         ).mappings()
     }
     return History(completed, scheduled, bios, totals)

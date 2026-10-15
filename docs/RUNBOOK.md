@@ -224,6 +224,7 @@ The first backfill is about 25 requests (one list page per year plus one article
   - **It is the existing fighter:** add a row to `services/worker/src/cageops_worker/seed/aliases.csv`: `wikipedia,<name as written in the article>,<their ufcstats_id>,<the evidence>`. Find the id with `SELECT ufcstats_id, name FROM fighters WHERE name ILIKE '%surname%'`. Two fighters with one name: choose by weight class.
   - **It is a new fighter:** add a row to `services/worker/src/cageops_worker/ingest/wikipedia_distinct_fighters.csv`: `<link title or Name_With_Underscores>,<the reason>`.
   - Then `uv run python -m cageops_worker.ingest dlq replay --all` and `uv run python -m cageops_worker.ingest worker --burst`. No seed re-run is needed, and the replay makes no requests (the pages are cached). Repeat until `dlq list` is empty: an event can hold several names, and the check reports the first it meets.
+  - **Then rebuild the features** (`uv run python -m cageops_worker.features rebuild`). A replay re-parses cached pages, so fights change with no new fetch, and `train` will refuse to run on features built before it.
 - **Precedence.** A ufcstats result is never replaced; Wikipedia fills a scheduled ufcstats bout that has no result; anomalies `source_disagreement`, `result_changed` and `ufcstats_scheduled_without_wikipedia_match` appear in the worker log. Nothing is ever cancelled by this source.
 - **Refreshing.** An event article is refetched after 24 hours until 30 days after the event, so a later edit is picked up by `backfill --since <today minus 30 days>`; older articles need `--force`. `scrape-upcoming` is refused for this source.
 - **After a run:** `uv run python -m cageops_worker.features rebuild` (history now runs through the latest Wikipedia event). Wikipedia fights count as fights but carry no stats.
@@ -257,6 +258,7 @@ uv run python -m cageops_worker.features rebuild --today 2026-10-06
 - `rebuild` recomputes every row in one transaction and prints a JSON report: row counts, `history_through` (the latest completed event we hold), how many completed fights have no trusted length (by reason), any past-dated `scheduled` fights it left out, and `output_sha256` (the same data always gives the same hash). If a check fails (every fight must produce exactly 2 rows) it exits 1, prints the report on stderr and leaves the old table untouched. A failed run leaves no `load_runs` row, same as the seed loaders.
 - `--today` pins what "upcoming" means (scheduled fights dated before it are left out); the default is the real date.
 - Rebuild after any seed load or ingestion run, and after a result is overturned (a rebuild picks up the corrected result).
+- The report also has `inputs_sha256`: a hash of the completed fights, their dates, their fighters' bios and their whole-fight stats, which is what the build read (D-033). `train` recomputes it and refuses to train when it no longer matches, so a rebuild is required after any change to those, including a Wikipedia replay (see below). `output_sha256` is unchanged by it.
 
 Look at one fighter's rows, oldest first (name matching ignores case and accents; an ambiguous name lists the candidates and exits 2):
 
@@ -266,6 +268,28 @@ uv run python -m cageops_worker.features show --fighter-id 1234 --json
 ```
 
 Spot-check against what you know: the first row should say 0 prior fights, and `win_streak` should reset to 0 right after a loss.
+
+## Training
+
+Two LightGBM models (win/loss and method of victory) are trained, scored against the baselines and registered in `model_versions` as one version (D-031, D-032, D-033). Needs `docker compose up -d`, migration 0009 (`uv run alembic -c packages/cageops_common/alembic.ini upgrade head`) and a **fresh features build** (`uv run python -m cageops_worker.features rebuild`; the build must be made by code that stores `inputs_sha256`, so rebuild once after upgrading).
+
+```bash
+uv run python -m cageops_trainer train
+uv run python -m cageops_trainer train --seed 7 --val-start 2024-10-04 --test-start 2025-10-04
+uv run python -m cageops_trainer list
+uv run python -m cageops_trainer activate 20261014-225801
+```
+
+- **`train`** reads everything in one snapshot, splits by time, fits both models, scores them, writes `MODEL_ARTIFACT_DIR/<version>/` (`win_loss.txt`, `method.txt`, `manifest.json`) and registers the version **inactive**. It never activates. About 5 seconds on the benchmark machine (BENCHMARKS.md). Stdout is the JSON report; stderr gets plain-English summary lines and any warnings.
+  - `--val-start` / `--test-start` default to the last two 365-day windows of data; `--train-start` ignores older fights. Whatever was used is stored in the row.
+  - `--seed` (default 42) sets every random choice; the same seed on the same data and library versions gives byte-identical model files.
+- **It refuses (exit 1, "run features rebuild")** when `fight_features` is not one complete build (two rows for every fight with a winner), when the build predates the input fingerprint, or when the fights, bios or stats it was built from have changed since (an overturned result, a filled-in bio, a Wikipedia replay). Nothing is written. The fix is always `uv run python -m cageops_worker.features rebuild`, then `train` again.
+- **It warns but still trains** when a seed load or a page fetch happened after the build and changed nothing the features use. The warning is in the report's `warnings` and on stderr. Seeing it is normal once scraping is scheduled.
+- **Read the report in this order:** `summary` (what the numbers say, including the comparison with the betting favorite and whether the experience heuristic's edge reversed), then `win_loss.test` (`all`, `before_2026-05-17`, `from_2026-05-17`, `calibration`), then `method` and `ablation`. The favorite is compared only on test fights with odds and the coverage is printed ("241 of 553"); the paired bootstrap interval says whether a gap is more than noise. Losing to the favorite is the expected result; beating it should make you look for leakage.
+- **`list`** shows versions newest first, `*` marks the active one, with the test log loss. `--json` prints every row including the full metrics.
+- **`activate VERSION`** makes one version the only active one in a single transaction and prints what it deactivated. An unknown version exits 1 and changes nothing. Postgres rejects two active rows, so a half-done switch cannot happen.
+- **A version's row says what it was trained on:** `data_cutoff` is the last event date the model was fit on (end of the training split); `config.dataset_last_event` is the last event date in the data the run read; `features_output_sha256` and `config.inputs_sha256` identify the features; `config` also holds the seed, splits, feature lists, parameters, library versions, git sha and each artifact's sha256.
+- **Artifacts are not in git.** `data/models/` is gitignored. A lost directory can be recreated by training again with the stored seed, splits and library versions on the same features; the registry row stays valid for its metrics either way. An unwanted inactive version is removed with `DELETE FROM model_versions WHERE version = '...'` plus its directory (the active one can't be activated away without activating another, so deactivate it that way first).
 
 ## Production
 

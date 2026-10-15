@@ -28,7 +28,7 @@ Build a spreadsheet for hosting CageOps, a small Kubernetes-based ML project: a 
 
 Sheet 1 — Hosting options: a DigitalOcean droplet (4GB and 8GB) running k3s, DigitalOcean managed Kubernetes, Hetzner Cloud, AWS Lightsail. Columns: monthly cost, vCPU, RAM, storage, bandwidth, pros, cons.
 Sheet 2 — GPU rental for a few hours of vLLM benchmarking with a ~7-8B model (24GB-class GPU): RunPod, Lambda, DigitalOcean GPU droplets, and anything comparable. Hourly cost and minimum billing.
-Sheet 3 — Monthly budget: hosting, object storage for backups, Anthropic API usage for ~500 short writeups/month with claude-haiku-4-5, domain, plus a one-time GPU line.
+Sheet 3 — Monthly budget: hosting, object storage for backups, Anthropic API usage for ~500 short writeups/month with claude-haiku-5-5, domain, plus a one-time GPU line.
 Also check whether the GitHub Student Developer Pack currently includes credits for any of these providers.
 
 Use current published prices and cite where each came from.

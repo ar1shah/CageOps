@@ -15,6 +15,7 @@ from typing import Any
 
 from sqlalchemy import Engine, func, insert, text
 
+from cageops_common.db.fingerprint import features_input_fingerprint
 from cageops_common.db.models import FightFeatures, LoadRun
 from cageops_worker.features.compute import (
     DURATION_NULL_REASONS,
@@ -128,12 +129,17 @@ def build_report(
 def rebuild(engine: Engine, today: date) -> dict[str, Any]:
     with engine.begin() as conn:
         history = load_history(conn)
+        # What the build read, as one hash. The trainer recomputes it and refuses to train on
+        # features whose inputs have changed since (D-033). Read in this transaction, right
+        # after the load, so it describes the same data.
+        inputs_sha256 = features_input_fingerprint(conn)
         targets, stale = target_fights(history, today)
         rows = build_rows(history, targets, today)
         report = build_report(history, targets, stale, rows, today)
         if report["fights_without_exactly_two_rows"]:
             raise FeatureBuildError("some fights did not produce exactly 2 rows", report)
 
+        report["inputs_sha256"] = inputs_sha256
         report["output_sha256"] = fingerprint(rows)
         run_id = conn.execute(
             insert(LoadRun)
