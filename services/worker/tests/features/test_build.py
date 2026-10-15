@@ -184,6 +184,23 @@ def test_a_past_dated_scheduled_fight_is_excluded_and_reported(world):
     assert report["fights_upcoming"] == 0
 
 
+def test_a_late_card_still_scheduled_the_next_day_is_built_but_two_days_on_it_is_not(world):
+    """A card that ran past midnight New York time: its bouts are dated yesterday and have no
+    result yet. They are still upcoming for one day (D-037), then they are stale like any other."""
+    small_world(world)
+    late = world.fight(1, 2, date(2029, 12, 31), status="scheduled")
+    older = world.fight(1, 2, date(2029, 12, 30), status="scheduled")
+
+    report = world.build(today=date(2030, 1, 1))
+
+    keys = {k[0] for k in world.features()}
+    assert late in keys and older not in keys
+    assert report["excluded_past_dated_scheduled"]["fights"] == [
+        {"fight_id": older, "event_date": "2029-12-30"}
+    ]
+    assert report["fights_upcoming"] == 1
+
+
 def test_a_fighter_with_an_unresolved_past_bout_is_flagged_on_later_rows_only(world):
     for fighter_id in (1, 2, 3, 4):
         world.fighter(fighter_id)

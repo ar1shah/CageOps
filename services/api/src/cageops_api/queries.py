@@ -229,10 +229,11 @@ def completed_fight_counts(conn: Connection, ids: Sequence[int], before: date) -
 # -- upcoming bouts ---------------------------------------------------------------------------
 
 
-def scheduled_bouts(conn: Connection, today: date) -> list[dict[str, Any]]:
-    """Every scheduled bout on an event dated today or later, in card order of the database
-    (event date, then fight id). `fights` keeps the smaller fighter id first, so a bout's two
-    sides are already in canonical order."""
+def scheduled_bouts(conn: Connection, earliest: date) -> list[dict[str, Any]]:
+    """Every still-`scheduled` bout on an event dated `earliest` or later, in the database's card
+    order (event date, then fight id). `earliest` is `earliest_upcoming_date(today)`: today, or
+    yesterday while a late card's results are not in yet. `fights` keeps the smaller fighter id
+    first, so a bout's two sides are already in canonical order."""
     rows = conn.execute(
         text(
             """
@@ -240,11 +241,11 @@ def scheduled_bouts(conn: Connection, today: date) -> list[dict[str, Any]]:
                    f.weight_class, f.is_title_fight, f.scheduled_rounds,
                    ev.id AS event_id, ev.name AS event_name, ev.event_date
               FROM fights f JOIN events ev ON ev.id = f.event_id
-             WHERE f.status = 'scheduled' AND ev.event_date >= :today
+             WHERE f.status = 'scheduled' AND ev.event_date >= :earliest
              ORDER BY ev.event_date, f.id
             """
         ),
-        {"today": today},
+        {"earliest": earliest},
     ).mappings()
     return [dict(r) for r in rows]
 

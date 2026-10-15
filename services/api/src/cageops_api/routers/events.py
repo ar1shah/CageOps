@@ -30,7 +30,7 @@ from cageops_api.schemas import (
     UpcomingResponse,
     WinProbability,
 )
-from cageops_common.inference.asof import app_today
+from cageops_common.inference.asof import app_today, earliest_upcoming_date
 
 router = APIRouter(tags=["events"])
 
@@ -42,7 +42,9 @@ router = APIRouter(tags=["events"])
     responses={503: {"model": ErrorBody, "description": "No verified model is loaded."}},
 )
 def upcoming(request: Request, db: Annotated[Database, Depends(get_database)]) -> JSONResponse:
-    """Every `scheduled` bout on an event dated today or later, grouped by event.
+    """Every `scheduled` bout on an event dated today or later, grouped by event. An event dated
+    yesterday is included while any of its bouts is still `scheduled`: a US card can run past
+    midnight New York time, and its results arrive hours later.
 
     Each bout's features are as of its own event date. The predictions are made in one batch (one
     query per kind and one model call for all of them), and each one is cached under its own key.
@@ -63,7 +65,7 @@ def upcoming(request: Request, db: Annotated[Database, Depends(get_database)]) -
     top_n = app.state.api_settings.predict_top_features
 
     with stage(metrics, "db"), db.connect() as conn:
-        bouts = queries.scheduled_bouts(conn, today)
+        bouts = queries.scheduled_bouts(conn, earliest_upcoming_date(today))
 
     cores: dict[int, PredictionCore | str] = {}
     names: dict[int, str] = {}

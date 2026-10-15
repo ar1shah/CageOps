@@ -17,6 +17,7 @@ from sqlalchemy import Engine, func, insert, text
 
 from cageops_common.db.fingerprint import features_input_fingerprint
 from cageops_common.db.models import FighterFeaturesCurrent, FightFeatures, LoadRun
+from cageops_common.inference.asof import earliest_upcoming_date
 from cageops_worker.features.compute import (
     DURATION_NULL_REASONS,
     Subject,
@@ -57,10 +58,13 @@ def target_fights(history: History, today: date) -> tuple[list[FightRecord], lis
 
     Targets are every completed fight plus scheduled fights that haven't happened yet. A bout
     dated before `today` that never got a result is neither history nor a real upcoming fight,
-    so it is excluded and reported (D-027).
+    so it is excluded and reported (D-027), with one day of grace: a bout dated yesterday and still
+    `scheduled` is on a late card (it ran past midnight New York time and its results have not
+    been ingested), so it is still built (D-037).
     """
-    upcoming = [f for f in history.scheduled if f.event_date >= today]
-    stale = [f for f in history.scheduled if f.event_date < today]
+    earliest = earliest_upcoming_date(today)
+    upcoming = [f for f in history.scheduled if f.event_date >= earliest]
+    stale = [f for f in history.scheduled if f.event_date < earliest]
     targets = sorted(history.completed + upcoming, key=lambda f: f.fight_id)
     return targets, sorted(stale, key=lambda f: f.fight_id)
 

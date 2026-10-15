@@ -305,3 +305,71 @@ def test_a_new_model_version_is_a_new_set_of_keys(app, client, registry, redis_c
 
     assert body["model_version"] == "20300101-000002"
     assert len(redis_client.keys(f"{KEY_PREFIX}*")) == 6  # three per version
+
+
+# -- late cards ---------------------------------------------------------------------------------
+
+
+def test_yesterdays_card_is_listed_while_a_bout_on_it_is_still_scheduled(
+    db, model_dir, redis_client, world
+):
+    """A Las Vegas card ends after midnight New York time and its results arrive hours later: at
+    00:30 on Sunday the Saturday card's unfinished bouts are still upcoming."""
+    saturday = date(2026, 10, 17)
+    finished = world.fight(ANN, CAL, saturday, winner=ANN, stats=True)  # result already in
+    late = world.fight(HAL, IVY, saturday, status="scheduled")  # main event, no result yet
+    world.bout_features(late, HAL, event_date=saturday, n_fights=1, last_fight=date(2025, 2, 1))
+    world.bout_features(late, IVY, event_date=saturday, n_fights=1, last_fight=date(2026, 6, 6))
+    too_old = world.fight(BOB, DAN, date(2026, 10, 16), status="scheduled")  # two days back
+
+    at_0030 = datetime(2026, 10, 18, 4, 30, tzinfo=UTC)  # 00:30 on Sunday in New York
+    with TestClient(make_app(db, model_dir, clock=lambda: at_0030, redis_client=redis_client)) as c:
+        body = c.get("/events/upcoming").json()
+
+    assert body["as_of"] == "2026-10-18"
+    listed = bouts(body)
+    assert late in listed and listed[late]["prediction"] is not None
+    assert finished not in listed  # a completed bout is not "upcoming"
+    assert too_old not in listed  # only one day of grace
+    # the fixture's own card is dated the same Saturday and is still scheduled too, and the
+    # later card (2026-11-07) is simply upcoming; nothing dated before the 17th is
+    assert [e["event_date"] for e in body["events"]] == ["2026-10-17", "2026-11-07"]
+    assert {world.bouts["ab"], world.bouts["cd"], world.bouts["ef"], late} <= set(listed)
+
+
+def test_the_same_card_is_gone_once_its_bouts_are_all_completed(db, model_dir, redis_client, world):
+    saturday = date(2026, 10, 17)
+    done = world.fight(HAL, IVY, saturday, winner=HAL, stats=True)
+    at_0030 = datetime(2026, 10, 18, 4, 30, tzinfo=UTC)
+    with TestClient(make_app(db, model_dir, clock=lambda: at_0030, redis_client=redis_client)) as c:
+        body = c.get("/events/upcoming").json()
+
+    listed = bouts(body)
+    assert done not in listed  # completed: not upcoming, whatever its date
+    assert all(listed[b]["prediction"] is not None for b in (world.bouts[k] for k in ("ab", "cd")))
+
+
+def test_and_a_day_later_it_is_not_listed_even_if_a_bout_was_never_resolved(
+    db, model_dir, redis_client, world
+):
+    stuck = world.fight(HAL, IVY, date(2026, 10, 17), status="scheduled")
+    monday = datetime(2026, 10, 19, 4, 30, tzinfo=UTC)  # 00:30 on Monday: two days after
+    with TestClient(make_app(db, model_dir, clock=lambda: monday, redis_client=redis_client)) as c:
+        listed = bouts(c.get("/events/upcoming").json())
+
+    assert stuck not in listed
+
+
+def test_at_midnight_new_york_the_boundary_is_new_york_not_utc(db, model_dir, redis_client, world):
+    saturday_card = world.fight(HAL, IVY, date(2026, 10, 17), status="scheduled")
+    for utc, expected in (
+        (datetime(2026, 10, 18, 3, 59, tzinfo=UTC), True),  # 23:59 Saturday: today's card
+        (datetime(2026, 10, 18, 4, 1, tzinfo=UTC), True),  # 00:01 Sunday: yesterday's, still due
+        (datetime(2026, 10, 19, 3, 59, tzinfo=UTC), True),  # 23:59 Sunday: one day of grace left
+        (datetime(2026, 10, 19, 4, 1, tzinfo=UTC), False),  # 00:01 Monday: grace over
+    ):
+        with TestClient(
+            make_app(db, model_dir, clock=lambda utc=utc: utc, redis_client=redis_client)
+        ) as c:
+            listed = saturday_card in bouts(c.get("/events/upcoming").json())
+        assert listed is expected, utc
