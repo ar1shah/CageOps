@@ -113,7 +113,7 @@ class ApiMetrics:
         for result in ("success", "failure"):
             self.reloads.labels(result)  # exposed at 0 so a rate() has something to start from
 
-        # -- the database pool (D-045) ------------------------------------------------------
+        # -- the database pool (D-041) ------------------------------------------------------
         self.pool_wait = Histogram(
             "api_db_pool_checkout_seconds",
             "Time spent waiting for a pooled database connection.",

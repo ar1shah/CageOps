@@ -29,7 +29,7 @@ class ApiSettings(BaseSettings):
     # How many contributing features /predict returns by default (D-038).
     predict_top_features: int = Field(default=5, ge=1, le=10)
     # The database connection pool. These are the numbers SQLAlchemy would use anyway; real ones
-    # come from the 2b-2 load test, which is why `api_db_pool_*` is exposed (D-045).
+    # come from the 2b-2 load test, which is why `api_db_pool_*` is exposed (D-041).
     db_pool_size: int = Field(default=5, ge=1)
     db_max_overflow: int = Field(default=5, ge=0)
     # Seconds a request waits for a free connection before it is answered 503.
