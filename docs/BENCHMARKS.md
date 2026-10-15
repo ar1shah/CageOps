@@ -142,6 +142,27 @@ predictions were committed before any run, so the results can contradict them.
 
 - Notes: the 406 matches the number the ROADMAP carry-over quotes for 2026-10-14. The test-slice log losses `data_quality.known_effect` quotes (0.6878 over 223 fights, 0.6566 over 330) are the Phase 2a entry above and are not re-measured here.
 
+### Phase 2b-2: the API image's size (D-045)
+- Date: 2026-10-15
+- Hardware: Intel Core i9-13900KF (32 logical CPUs), 31 GiB RAM, WSL2 (Linux 6.18.54.1-microsoft-standard-WSL2); Docker 29.8.0 (Docker Desktop, containerd image store); `linux/amd64`.
+- Commit: `d739704`
+- Command: `docker build -f infra/docker/api.Dockerfile -t cageops-api:local .`, then `docker image inspect cageops-api:local --format '{{.Size}}'`, `docker history cageops-api:local`, and `docker run --rm --entrypoint sh cageops-api:local -c 'du -sxm / ; du -sm /app/.venv/lib/python3.12/site-packages/* | sort -rn | head'`. The size check CI runs is `scripts/check_api_image.sh cageops-api:local` (budget 800 MiB).
+- Result:
+
+| what | value |
+|---|---|
+| `docker image inspect .Size` | **641,896,418 bytes (612 MiB)** |
+| sum of the layer sizes in `docker history` | about 494 MB |
+| files inside the container (`du -sxm /`) | 459 MiB |
+| the python:3.12.15-slim-bookworm base alone (`.Size`) | 197,098,586 bytes |
+| `/app/.venv` (the installed dependencies) | 328 MiB (344 MB layer) |
+| largest installed packages | scipy 109 MiB (+30 MiB `scipy.libs`), numpy 43 MiB (+27 MiB `numpy.libs`), sqlalchemy 28, uvloop 16, psycopg binary libs 11, lightgbm 10 |
+| `libgomp1` | 811 kB |
+| layers | 7 |
+| cold build of the app layers, base images already pulled | 17.6 s wall clock (7.8 s of it downloading the locked wheels) |
+
+- Notes: three numbers, one image: `.Size` is what Docker Desktop reports and what the budget uses; the layer sum and the filesystem total are smaller because the containerd store's `.Size` counts the unpacked snapshot differently. The big item is scipy (about 140 MiB with its libraries), which LightGBM depends on, so it cannot be dropped without dropping the model library. Nothing here was minimized: no `apt` cache (removed in the same layer), no compiler, no uv, no tests. One build on one machine, n=1.
+
 ### Phase 2b-2: the input fingerprint the cache key polls (D-042)
 - Date: 2026-10-15
 - Hardware: Intel Core i9-13900KF (32 logical CPUs), 31 GiB RAM, WSL2 (Linux 6.18.54.1-microsoft-standard-WSL2); Python 3.12.14; Postgres 16.12 in Docker on the same machine; warm cache, no other load.
