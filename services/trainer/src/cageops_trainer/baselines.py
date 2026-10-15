@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from cageops_trainer.features import NUMERIC_FEATURES
+from cageops_common.inference.features import NUMERIC_FEATURES
 
 PRIOR_UFC_FIGHTS = NUMERIC_FEATURES.index("prior_ufc_fights")
 

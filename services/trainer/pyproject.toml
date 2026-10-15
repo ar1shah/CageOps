@@ -4,9 +4,7 @@ version = "0.1.0"
 description = "Model training, evaluation, registry, backtests"
 requires-python = ">=3.12"
 dependencies = [
-    "cageops-common",
-    "lightgbm>=4.7.0",
-    "numpy>=2.5.4",
+    "cageops-common[inference]",
 ]
 
 [build-system]

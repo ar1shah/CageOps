@@ -3,7 +3,7 @@ name = "cageops-api"
 version = "0.1.0"
 description = "FastAPI prediction + writeup service"
 requires-python = ">=3.12"
-dependencies = ["cageops-common", "fastapi", "uvicorn[standard]"]
+dependencies = ["cageops-common[inference]", "fastapi", "uvicorn[standard]"]
 
 [dependency-groups]
 dev = ["httpx"]

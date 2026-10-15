@@ -18,7 +18,7 @@ import pytest
 from sqlalchemy import Engine, text
 
 from cageops_common.db.fingerprint import features_input_fingerprint
-from cageops_trainer.features import NUMERIC_FEATURES
+from cageops_common.inference.features import NUMERIC_FEATURES
 
 FIRST_EVENT = date(2020, 1, 4)  # a Saturday
 EVENTS = 208  # weekly: four years

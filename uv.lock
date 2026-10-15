@@ -80,7 +80,7 @@ name = "cageops-api"
 version = "0.1.0"
 source = { editable = "services/api" }
 dependencies = [
-    { name = "cageops-common" },
+    { name = "cageops-common", extra = ["inference"] },
     { name = "fastapi" },
     { name = "uvicorn", extra = ["standard"] },
 ]
@@ -92,7 +92,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "cageops-common", editable = "packages/cageops_common" },
+    { name = "cageops-common", extras = ["inference"], editable = "packages/cageops_common" },
     { name = "fastapi" },
     { name = "uvicorn", extras = ["standard"] },
 ]
@@ -111,13 +111,22 @@ dependencies = [
     { name = "sqlalchemy" },
 ]
 
+[package.optional-dependencies]
+inference = [
+    { name = "lightgbm" },
+    { name = "numpy" },
+]
+
 [package.metadata]
 requires-dist = [
     { name = "alembic", specifier = ">=1.20.0" },
+    { name = "lightgbm", marker = "extra == 'inference'", specifier = ">=4.7.0" },
+    { name = "numpy", marker = "extra == 'inference'", specifier = ">=2.5.4" },
     { name = "psycopg", extras = ["binary"], specifier = ">=3.3.6" },
     { name = "pydantic-settings" },
     { name = "sqlalchemy", specifier = ">=2.1.2" },
 ]
+provides-extras = ["inference"]
 
 [[package]]
 name = "cageops-scraper"
@@ -147,17 +156,11 @@ name = "cageops-trainer"
 version = "0.1.0"
 source = { editable = "services/trainer" }
 dependencies = [
-    { name = "cageops-common" },
-    { name = "lightgbm" },
-    { name = "numpy" },
+    { name = "cageops-common", extra = ["inference"] },
 ]
 
 [package.metadata]
-requires-dist = [
-    { name = "cageops-common", editable = "packages/cageops_common" },
-    { name = "lightgbm", specifier = ">=4.7.0" },
-    { name = "numpy", specifier = ">=2.5.4" },
-]
+requires-dist = [{ name = "cageops-common", extras = ["inference"], editable = "packages/cageops_common" }]
 
 [[package]]
 name = "cageops-worker"

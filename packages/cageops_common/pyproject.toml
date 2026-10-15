@@ -10,6 +10,15 @@ dependencies = [
     "sqlalchemy>=2.1.2",
 ]
 
+[project.optional-dependencies]
+# What predicting needs (`cageops_common.inference`, except `asof`, which is stdlib only).
+# The API and the trainer depend on `cageops-common[inference]`; the scraper and the worker do not,
+# so their images never carry LightGBM or libgomp.
+inference = [
+    "lightgbm>=4.7.0",
+    "numpy>=2.5.4",
+]
+
 [build-system]
 requires = ["uv_build>=0.12,<0.13"]
 build-backend = "uv_build"

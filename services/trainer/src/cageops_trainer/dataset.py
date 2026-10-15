@@ -21,7 +21,8 @@ import numpy as np
 from sqlalchemy import Connection, text
 
 from cageops_common.db.fingerprint import features_input_fingerprint
-from cageops_trainer.features import NUMERIC_FEATURES, normalize_stance
+from cageops_common.inference.features import NUMERIC_FEATURES
+from cageops_common.inference.rows import number, rows_to_arrays
 
 REBUILD = "run: uv run python -m cageops_worker.features rebuild"
 
@@ -182,10 +183,6 @@ class Dataset:
         return {"rows": len(rows), "sha256": digest}
 
 
-def _number(value: Any) -> float:
-    return float("nan") if value is None else float(value)
-
-
 def load_dataset(conn: Connection) -> Dataset:
     fights = (
         conn.execute(
@@ -230,21 +227,17 @@ def load_dataset(conn: Connection) -> Dataset:
     }
 
     n = len(fights)
-    a_values = np.full((n, len(NUMERIC_FEATURES)), np.nan)
-    b_values = np.full((n, len(NUMERIC_FEATURES)), np.nan)
     schedule = np.full((n, 2), np.nan)
-    a_stance, b_stance, weight_class = [], [], []
-    for i, fight in enumerate(fights):
-        a = features[(fight["fight_id"], fight["fighter_a_id"])]
-        b = features[(fight["fight_id"], fight["fighter_b_id"])]
-        a_values[i] = [_number(a[name]) for name in NUMERIC_FEATURES]
-        b_values[i] = [_number(b[name]) for name in NUMERIC_FEATURES]
-        a_stance.append(normalize_stance(a["stance"]))
-        b_stance.append(normalize_stance(b["stance"]))
-        weight_class.append(a["weight_class"])
+    # One function turns a feature row into the model's input, here and in the API.
+    rows_a = [features[(f["fight_id"], f["fighter_a_id"])] for f in fights]
+    rows_b = [features[(f["fight_id"], f["fighter_b_id"])] for f in fights]
+    a_values, a_stance = rows_to_arrays(rows_a)
+    b_values, b_stance = rows_to_arrays(rows_b)
+    weight_class = [a["weight_class"] for a in rows_a]
+    for i, a in enumerate(rows_a):
         schedule[i] = [
-            _number(None if a["is_title_fight"] is None else int(a["is_title_fight"])),
-            _number(a["scheduled_rounds"]),
+            number(None if a["is_title_fight"] is None else int(a["is_title_fight"])),
+            number(a["scheduled_rounds"]),
         ]
 
     fight_ids = np.array([f["fight_id"] for f in fights], dtype=np.int64)
