@@ -8,10 +8,12 @@ are written once.
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
+from datetime import date
 from typing import Any
 
 import numpy as np
 
+from cageops_common.inference.asof import date_relative_features
 from cageops_common.inference.features import NUMERIC_FEATURES, normalize_stance
 
 
@@ -34,3 +36,11 @@ def rows_to_arrays(rows: Sequence[Mapping[str, Any]]) -> tuple[np.ndarray, list[
         values[i], stance = row_to_inputs(row)
         stances.append(stance)
     return values, stances
+
+
+def with_date_relative(row: Mapping[str, Any], as_of: date) -> dict[str, Any]:
+    """A `fighter_features_current` row with `age_days` and `days_since_last_fight` filled in for
+    `as_of`, from the row's `dob` and `last_fight_date`. The same function the feature builder
+    calls (`asof.date_relative_features`), so a stored row is right for any date it is asked
+    about (D-037)."""
+    return {**row, **date_relative_features(as_of, row.get("dob"), row.get("last_fight_date"))}

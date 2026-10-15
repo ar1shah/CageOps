@@ -26,7 +26,7 @@ from cageops_api.errors import install_error_handlers
 from cageops_api.metrics import ApiMetrics
 from cageops_api.middleware import RequestContextMiddleware
 from cageops_api.model_manager import ModelManager, ModelUnavailable
-from cageops_api.routers import fighters
+from cageops_api.routers import fighters, predict
 from cageops_common.config import Settings, get_settings
 from cageops_common.db.session import make_engine
 from cageops_common.logs import configure_logging
@@ -121,6 +121,7 @@ def create_app(
     app.add_middleware(RequestContextMiddleware, metrics=metrics)
     install_error_handlers(app)
     app.include_router(fighters.router)
+    app.include_router(predict.router)
 
     @app.exception_handler(ModelUnavailable)
     async def model_unavailable(_: Request, exc: ModelUnavailable) -> JSONResponse:
