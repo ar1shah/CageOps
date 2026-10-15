@@ -93,6 +93,7 @@ data/                      local-only raw data (gitignored)
 - `uv run python -m cageops_trainer train [--seed N] [--val-start D] [--test-start D] [--train-start D] [--out-dir P]` — train, evaluate against the betting favorite and an experience/ranking heuristic, and register a new INACTIVE version (D-031..D-033). Refuses with exit 1 ("run features rebuild") on stale features; warns on newer loads or fetches. Needs migration 0009 and a features rebuild made by the current code
 - `uv run python -m cageops_trainer list [--json]` — registered versions, newest first; `*` marks the active one
 - `uv run python -m cageops_trainer activate VERSION` — make one version the only active one (one transaction; Postgres rejects two)
+- `uv run python scripts/odds_daily_probe.py <csv> --expect-sha256 <hash> [--json]` — read-only: how many of our labeled fights the jerzyszocik "UFC Betting Odds (Daily)" snapshot would price, by ufcstats id and by name + date, and why the rest do not match (D-034). Nothing is loaded; `--expect-sha256` pins the snapshot because the file changes daily. The pinned snapshot's path, hash and command are in `docs/BENCHMARKS.md`
 
 ## DECISIONS.md entry format
 

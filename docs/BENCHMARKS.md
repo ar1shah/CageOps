@@ -215,6 +215,7 @@ Reading it: there is no consistent direction. The lowest bin is more extreme tha
 | winner fights from 2026-05-17 (Wikipedia period) | 223 |
 | train / val / test winner fights (rolling 365 days) | 7706 / 512 / 553 |
 | test fights with mdabbert odds | 241 |
+| fighters with a completed fight from 2026-05-17 (their rate features exclude it; second query below) | 406 |
 
 - Notes: these are the numbers the decisions are built on. They move when ingestion adds fights, so a later reader should re-run the query rather than trust the table.
 
@@ -238,6 +239,18 @@ UNION ALL SELECT 'train / val / test (rolling 365 d) winner fights',
                    count(*) FILTER (WHERE event_date >= DATE '2024-10-04' AND event_date < DATE '2025-10-04'),
                    count(*) FILTER (WHERE event_date >= DATE '2025-10-04')) FROM lf WHERE outcome = 'win'
 UNION ALL SELECT 'test fights with mdabbert odds', count(*)::text FROM lf WHERE outcome = 'win' AND event_date >= DATE '2025-10-04' AND has_odds;
+```
+
+The 406 comes from a second query, run the same way (it needs fighter ids, which the CTE above does not carry). It was run on 2026-10-14, with the database at history through 2026-10-03, and is the figure quoted in the 2b note in ROADMAP.md:
+
+```sql
+SELECT count(DISTINCT p)
+FROM (
+  SELECT f.fighter_a_id AS p FROM fights f JOIN events e ON e.id = f.event_id
+  WHERE e.event_date >= DATE '2026-05-17' AND f.status = 'completed'
+  UNION
+  SELECT f.fighter_b_id FROM fights f JOIN events e ON e.id = f.event_id
+  WHERE e.event_date >= DATE '2026-05-17' AND f.status = 'completed') x;
 ```
 
 ### Phase 2a follow-up: what the jerzyszocik daily odds dataset would add (not loaded; D-034)
