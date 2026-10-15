@@ -8,6 +8,8 @@ dependencies = [
     "psycopg[binary]>=3.3.6",
     "pydantic-settings",
     "sqlalchemy>=2.1.2",
+    # zoneinfo needs the IANA database; slim container images may not ship one (D-037).
+    "tzdata",
 ]
 
 [project.optional-dependencies]

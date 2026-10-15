@@ -88,6 +88,22 @@ def test_rebuild_prints_a_json_report(world):
     assert (report["rows"], report["today"]) == (6, "2030-01-01")
 
 
+def test_rebuild_without_today_uses_the_app_timezone_date_not_the_host_clock(world, monkeypatch):
+    """`today` decides which scheduled bouts are upcoming and what the current-feature rows are
+    as of (D-037); it must be the same date the API uses, in APP_TIMEZONE."""
+    from cageops_worker.features import cli as cli_module
+
+    career(world)
+    seen = []
+    monkeypatch.setattr(cli_module, "app_today", lambda tz: seen.append(tz) or date(2031, 2, 3))
+
+    code, out = run(world, "rebuild")
+
+    assert code == 0
+    assert json.loads(out)["today"] == "2031-02-03"
+    assert seen == ["America/New_York"]
+
+
 def test_a_failed_rebuild_exits_1_and_prints_the_report_on_stderr(world, monkeypatch, capsys):
     career(world)
     real = build_module.build_rows

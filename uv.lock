@@ -109,6 +109,7 @@ dependencies = [
     { name = "psycopg", extra = ["binary"] },
     { name = "pydantic-settings" },
     { name = "sqlalchemy" },
+    { name = "tzdata" },
 ]
 
 [package.optional-dependencies]
@@ -125,6 +126,7 @@ requires-dist = [
     { name = "psycopg", extras = ["binary"], specifier = ">=3.3.6" },
     { name = "pydantic-settings" },
     { name = "sqlalchemy", specifier = ">=2.1.2" },
+    { name = "tzdata" },
 ]
 provides-extras = ["inference"]
 

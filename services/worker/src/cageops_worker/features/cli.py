@@ -20,6 +20,7 @@ from sqlalchemy import Engine, text
 
 from cageops_common.config import get_settings
 from cageops_common.db.session import make_engine
+from cageops_common.inference.asof import app_today
 from cageops_worker.features.build import FeatureBuildError, rebuild
 from cageops_worker.seed.normalize import normalize_name
 
@@ -63,7 +64,8 @@ def build_parser() -> argparse.ArgumentParser:
         type=date.fromisoformat,
         default=None,
         metavar="YYYY-MM-DD",
-        help="treat this as today; scheduled fights dated before it are left out (default: today)",
+        help="treat this as today; scheduled fights dated before it are left out "
+        "(default: today in APP_TIMEZONE, America/New_York unless set; D-037)",
     )
 
     show = commands.add_parser("show", help="print one fighter's feature rows in date order")
@@ -76,7 +78,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 def cmd_rebuild(engine: Engine, args: argparse.Namespace, out: IO[str]) -> int:
     try:
-        report = rebuild(engine, args.today or date.today())
+        report = rebuild(engine, args.today or app_today(get_settings().app_timezone))
     except FeatureBuildError as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         print(json.dumps(exc.report, indent=2, default=str), file=sys.stderr)
