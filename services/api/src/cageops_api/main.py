@@ -31,6 +31,13 @@ from cageops_api.features_watch import FeaturesWatch
 from cageops_api.metrics import ApiMetrics
 from cageops_api.middleware import RequestContextMiddleware
 from cageops_api.model_manager import ModelManager, ModelUnavailable
+from cageops_api.ratelimit import (
+    RateLimitConfig,
+    RateLimiter,
+    RateLimitMiddleware,
+    RouteTemplates,
+)
+from cageops_api.redis_guard import RedisGuard
 from cageops_api.routers import fighters, predict
 from cageops_common.config import Settings, get_settings
 from cageops_common.db.session import make_engine
@@ -98,7 +105,7 @@ def create_app(
         app.state.features_watch = watch
 
         owned_redis = redis_client
-        if owned_redis is None and own.cache_enabled:
+        if owned_redis is None and (own.cache_enabled or own.rate_limit_enabled):
             timeout = own.redis_timeout_ms / 1000
             owned_redis = redis.Redis.from_url(
                 common.redis_url,
@@ -107,9 +114,43 @@ def create_app(
                 retry=Retry(NoBackoff(), 0),  # fail fast: the cache must never be slower than not
                 health_check_interval=0,
             )
+        guard = RedisGuard(metrics)  # one view of Redis's health for the cache and the limiter
+        app.state.redis_guard = guard
         app.state.cache = PredictionCache(
-            owned_redis if own.cache_enabled else None, ttl_s=own.cache_ttl_s, metrics=metrics
+            owned_redis if own.cache_enabled else None,
+            ttl_s=own.cache_ttl_s,
+            metrics=metrics,
+            guard=guard,
         )
+        app.state.rate_limiter = None
+        app.state.route_templates = RouteTemplates.from_app(app)
+        if own.rate_limit_enabled and owned_redis is not None:
+            keys = own.frontend_keys()
+            configured = bool(
+                own.frontend_api_key.get_secret_value()
+                or own.frontend_api_key_previous.get_secret_value()
+            )
+            if configured and not keys:
+                log.warning(
+                    "a frontend API key is set but shorter than 32 characters; "
+                    "the frontend client class is disabled"
+                )
+            app.state.rate_limiter = RateLimiter(
+                owned_redis,
+                config=RateLimitConfig(
+                    enabled=True,
+                    per_minute=own.rate_limit_per_minute,
+                    burst=own.rate_limit_burst,
+                    trusted_proxies=own.trusted_proxies(),
+                    frontend_keys=keys,
+                    user_per_minute=own.frontend_user_rate_per_minute,
+                    user_burst=own.frontend_user_burst,
+                    key_per_minute=own.frontend_key_rate_per_minute,
+                    key_burst=own.frontend_key_burst,
+                ),
+                metrics=metrics,
+                guard=guard,
+            )
 
         # Load before taking traffic. A failure does not stop the app: it starts, reports not
         # ready (503 on /readyz and on predictions), and the poller keeps trying.
@@ -152,6 +193,9 @@ def create_app(
     app.state.metrics = metrics
     app.state.clock = clock or (lambda: datetime.now(UTC))
     metrics.watch_pool(lambda: getattr(app.state, "engine", None))
+    # Added last is outermost: the request context wraps the limiter, so a 429 is timed,
+    # labelled with its route template and logged like any other response.
+    app.add_middleware(RateLimitMiddleware)
     app.add_middleware(RequestContextMiddleware, metrics=metrics)
     install_error_handlers(app)
     app.include_router(fighters.router)

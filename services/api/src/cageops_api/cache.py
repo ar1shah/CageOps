@@ -29,23 +29,19 @@ from __future__ import annotations
 
 import logging
 import re
-import time
-from collections.abc import Callable
 from datetime import date
 
 import redis
 
 from cageops_api.metrics import ApiMetrics
 from cageops_api.predict import PredictionCore
+from cageops_api.redis_guard import FAIL_OPEN, RedisGuard
 
 log = logging.getLogger(__name__)
 
 CACHE_SCHEMA = "v1"
 KEY_PREFIX = f"pred:{CACHE_SCHEMA}:"
 SOURCE_ADHOC = "adhoc"
-
-# What counts as "Redis is unavailable". OSError covers a socket that dies below redis-py.
-FAIL_OPEN = (redis.exceptions.RedisError, OSError)
 
 
 def slug(value: str | None) -> str:
@@ -85,18 +81,12 @@ class PredictionCache:
         *,
         ttl_s: int,
         metrics: ApiMetrics,
-        clock: Callable[[], float] = time.monotonic,
-        skip_s: float = 5.0,
-        log_every_s: float = 30.0,
+        guard: RedisGuard,
     ) -> None:
         self.client = client
         self.ttl_s = ttl_s
         self.metrics = metrics
-        self._clock = clock
-        self._skip_s = skip_s
-        self._log_every_s = log_every_s
-        self._skip_until = 0.0
-        self._last_logged = float("-inf")
+        self.guard = guard
 
     @property
     def enabled(self) -> bool:
@@ -104,16 +94,13 @@ class PredictionCache:
 
     def get(self, key: str) -> tuple[PredictionCore | None, str]:
         """(core, "hit") | (None, "miss") | (None, "bypass")."""
-        if self.client is None:
-            self.metrics.cache_bypassed.inc()
-            return None, "bypass"
-        if self._clock() < self._skip_until:
+        if self.client is None or not self.guard.available():
             self.metrics.cache_bypassed.inc()
             return None, "bypass"
         try:
             raw = self.client.get(key)
         except FAIL_OPEN as exc:
-            self._failed("cache_get", exc)
+            self.guard.failed("cache_get", exc)
             self.metrics.cache_bypassed.inc()
             return None, "bypass"
         if raw is None:
@@ -130,20 +117,9 @@ class PredictionCache:
         return core, "hit"
 
     def set(self, key: str, core: PredictionCore) -> None:
-        if self.client is None or self._clock() < self._skip_until:
+        if self.client is None or not self.guard.available():
             return
         try:
             self.client.set(key, core.model_dump_json(), ex=self.ttl_s)
         except FAIL_OPEN as exc:
-            self._failed("cache_set", exc)
-
-    def _failed(self, op: str, exc: Exception) -> None:
-        now = self._clock()
-        self.metrics.redis_errors.labels(op).inc()
-        self._skip_until = now + self._skip_s
-        if now - self._last_logged >= self._log_every_s:  # one line per window, not per request
-            self._last_logged = now
-            log.warning(
-                "redis unavailable; serving uncached",
-                extra={"op": op, "error": type(exc).__name__, "skipping_for_s": self._skip_s},
-            )
+            self.guard.failed("cache_set", exc)

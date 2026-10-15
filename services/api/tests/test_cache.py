@@ -125,7 +125,10 @@ def build_app(db, model_dir, clock, client, *, enabled=True, ttl=21600):
     return create_app(
         settings=Settings(database_url="postgresql://x", redis_url="redis://x"),
         api_settings=ApiSettings(
-            model_artifact_dir=model_dir, cache_enabled=enabled, cache_ttl_s=ttl
+            model_artifact_dir=model_dir,
+            cache_enabled=enabled,
+            cache_ttl_s=ttl,
+            rate_limit_enabled=False,  # these tests are about the cache; the limiter has its own
         ),
         engine=db, redis_client=client, configure_logs=False, poll=False, clock=clock,
     )  # fmt: skip
@@ -354,7 +357,7 @@ def test_after_a_failure_redis_is_left_alone_for_a_few_seconds_then_tried_again(
     with TestClient(app) as client:
         cache = app.state.cache
         now = [100.0]
-        cache._clock = lambda: now[0]
+        app.state.redis_guard._clock = lambda: now[0]
         predict(client, ANN, BOB)
         errors = metric(app, "api_redis_errors_total", op="cache_get")
         for _ in range(5):

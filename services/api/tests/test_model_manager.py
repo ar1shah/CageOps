@@ -32,6 +32,7 @@ def make_app(db, model_dir):
             api_settings=ApiSettings(
                 model_artifact_dir=model_dir,
                 cache_enabled=False,
+                rate_limit_enabled=False,
                 model_poll_interval_s=poll_interval_s,
                 model_reload_retry_s=retry_s,
             ),

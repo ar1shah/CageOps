@@ -154,9 +154,6 @@ class ApiMetrics:
             registry=self.registry,
         )
 
-    def watch_pool(self, engine: Callable[[], Engine | None]) -> None:
-        self.registry.register(PoolCollector(engine))
-
         # -- the prediction cache (D-042) ---------------------------------------------------
         self.cache_hits = Counter(
             "api_cache_hits_total", "Predictions answered from Redis.", registry=self.registry
@@ -191,3 +188,22 @@ class ApiMetrics:
             "result, bio or stat changed since the last features rebuild.",
             registry=self.registry,
         )
+
+        # -- rate limiting (D-043) ----------------------------------------------------------
+        self.ratelimited = Counter(
+            "api_ratelimited_total",
+            "Requests refused with 429, by client class (public | frontend) and by which bucket "
+            "was empty (ip | user | key).",
+            ["client_class", "scope"],
+            registry=self.registry,
+        )
+        self.ratelimit_ignored = Counter(
+            "api_ratelimit_ignored_headers_total",
+            "Headers that were sent but not believed: a forwarded client IP without a valid API "
+            "key, an API key that did not match, or a malformed client IP.",
+            ["reason"],
+            registry=self.registry,
+        )
+
+    def watch_pool(self, engine: Callable[[], Engine | None]) -> None:
+        self.registry.register(PoolCollector(engine))
