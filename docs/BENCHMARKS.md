@@ -239,3 +239,59 @@ UNION ALL SELECT 'train / val / test (rolling 365 d) winner fights',
                    count(*) FILTER (WHERE event_date >= DATE '2025-10-04')) FROM lf WHERE outcome = 'win'
 UNION ALL SELECT 'test fights with mdabbert odds', count(*)::text FROM lf WHERE outcome = 'win' AND event_date >= DATE '2025-10-04' AND has_odds;
 ```
+
+### Phase 2a follow-up: what the jerzyszocik daily odds dataset would add (not loaded; D-034)
+- Date: 2026-10-14
+- Hardware: not a timing (one run took about 3 s on the machine above); counts do not depend on it.
+- Commit: `51a2b66` (the script). The database was at history through 2026-10-03.
+- Command: `uv run python scripts/odds_daily_probe.py data/raw/jerzyszocik__ufc-betting-odds-daily-dataset/UFC_betting_odds.csv --expect-sha256 44fc6838e7ae9698883ac36f5238667a16576067d7b31c2f23077b3066f9f716` (add `--json` for the full report these tables are copied from). Read-only: the database connection runs `SET TRANSACTION READ ONLY` and nothing is loaded.
+- Snapshot: `UFC_betting_odds.csv` from Kaggle `jerzyszocik/ufc-betting-odds-daily-dataset`, CC0, **sha256 `44fc6838e7ae9698883ac36f5238667a16576067d7b31c2f23077b3066f9f716`**, 32,650,206 bytes, created on Kaggle 2026-10-14 14:47 UTC, downloaded 2026-10-14 20:08 EDT (2026-10-15 00:08 UTC) with kaggle CLI 2.2.4 into `data/raw/jerzyszocik__ufc-betting-odds-daily-dataset/` (gitignored, with a `SNAPSHOT.json` sidecar; deliberately not in `scripts/seed_sources.json` or the seed manifest, because nothing is loaded from it). **The file is regenerated upstream every day, so this hash is the only way to reproduce these numbers.**
+- Our side: 8,771 fights with a decided winner, 6,902 of them with mdabbert odds. Windows are D-031's: validation from 2024-10-04, test from 2025-10-04, Wikipedia period from 2026-05-17.
+- Matching: the ufcstats id when the feed row has one, else the normalized, unordered fighter-name pair within +-1 day (the rule the existing loaders use). A row only counts if it has both moneyline prices.
+
+**Coverage of our labeled fights**
+
+| | fights | mdabbert | daily dataset | by ufcstats id | by name + date | adds beyond mdabbert | union |
+|---|---|---|---|---|---|---|---|
+| test year | 553 | 241 | 426 | 0 | 426 | **237** | 478 (86%) |
+| &nbsp;&nbsp;test, before 2026-05-17 | 330 | 241 | 264 | 0 | 264 | **75** | 316 (96%) |
+| &nbsp;&nbsp;test, from 2026-05-17 (Wikipedia) | 223 | 0 | 162 | 0 | 162 | **162** | 162 (73%) |
+| validation | 512 | 476 | 324 | 303 | 21 | **0** | 476 (93%) |
+| train | 7,706 | 6,185 | 5,971 | 5,971 | 0 | **1** | 6,186 (80%) |
+
+By year, 2023 on (all years are in the `--json` output):
+
+| | fights | mdabbert | daily dataset | by ufcstats id | by name + date | adds beyond mdabbert | union |
+|---|---|---|---|---|---|---|---|
+| 2023 | 504 | 416 | 416 | 416 | 0 | **0** | 416 (83%) |
+| 2024 | 513 | 383 | 370 | 370 | 0 | **0** | 383 (75%) |
+| 2025 | 516 | 500 | 331 | 213 | 118 | **1** | 501 (97%) |
+| 2026 | 425 | 114 | 329 | 0 | 329 | **236** | 350 (82%) |
+
+- **The gain is entirely in the test year**: +237 fights beyond mdabbert, of which **162 are in the Wikipedia period, where mdabbert has none**. Validation adds 0 and train 1.
+- **The ufcstats id only helps up to 2025.** In the test year it matches **0** fights, because every row dated 2026 has no `fight_url`: 139,048 of 214,407 rows are blank, and so is every fighter URL on them. 2026 can only be matched by name and date.
+
+**The 75 test fights with no odds in either source** (rule for "spelling variant": same person if the sorted name tokens or the last token agree, or the difflib ratio is >= 0.75):
+
+| | before 2026-05-17 | from 2026-05-17 | all |
+|---|---|---|---|
+| spelling variant of a fight in the feed | 14 | 32 | 46 |
+| one fighter matches, the other is different | 0 | 5 | 5 |
+| bout not in the feed | 0 | 24 | 24 |
+
+**Ceiling with alias review, test year (553 fights):** exact matching reaches 478 (86.4%). Resolving the spelling variants reaches **524** (94.8%); resolving every fight where one fighter matches would reach at most 529 (95.7%), but the 5 "different opponent" fights look like replacement opponents, which no alias fixes. The rule is loose and was not hand-checked fight by fight, so treat 524 as a measured estimate, not a guarantee.
+
+**Is the price any good?** (test fights with a pre-fight consensus: last snapshot per bookmaker on or before the event day, de-vigged, each row oriented to our fighter A, averaged)
+
+| | |
+|---|---|
+| fights with a consensus | 426 |
+| consensus favorite won | 304 of 426 (71.4%) |
+| ...on the 237 fights mdabbert lacks | 166 of 237 (70.0%) |
+| agrees with mdabbert's favorite | 181 of 187 (96.8%) |
+| bookmakers per fight | median 24, min 1, max 30 |
+| last snapshot, days before the event | median 0; 68% within 1 day |
+
+**What the file is.** 214,407 rows: a one-time historical import (source `zewnetrzne`, 6,299 rows for events 2010 to 2024-12-07, all added 2025-07-27, so `adding_date` is not a capture time there) plus live daily snapshots from about 40 bookmaker and region combinations from 2025-07-26 on (684 rows have no `adding_date` and no source). 100% of the 2026 rows were added on or before the event day. Event dates run to 2028-07-30 (upcoming placeholders).
+
+**What this does and does not show.** It shows how many of our fights a loader could price, and that the feed's favorite agrees with mdabbert's where both exist. It does not show how the model compares with this baseline: nothing was loaded and the model was not re-scored. The consensus is "last snapshot on or before the event day", which is close to a closing line (68% within a day) but is not proven to be one.
