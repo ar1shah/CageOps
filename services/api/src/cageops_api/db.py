@@ -7,6 +7,7 @@ saturates first under load) and turns "gave up waiting" into a 503 instead of a 
 
 from __future__ import annotations
 
+import threading
 import time
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -32,6 +33,18 @@ class Database:
     def __init__(self, engine: Engine, metrics: ApiMetrics) -> None:
         self.engine = engine
         self.metrics = metrics
+        self._lock = threading.Lock()
+        self._in_use = 0
+        self._peak = 0
+
+    def take_peak(self) -> int:
+        """The most connections that were checked out at once since the last call, then reset to
+        what is in use now. A gauge read every few seconds cannot see a pool that fills for 3 ms;
+        this can, which is what sizing it needs."""
+        with self._lock:
+            peak = self._peak
+            self._peak = self._in_use
+            return peak
 
     @contextmanager
     def connect(self) -> Iterator[Connection]:
@@ -43,7 +56,12 @@ class Database:
             self.metrics.pool_timeouts.inc()
             raise DatabaseBusy() from exc
         self.metrics.pool_wait.observe(time.perf_counter() - started)
+        with self._lock:
+            self._in_use += 1
+            self._peak = max(self._peak, self._in_use)
         try:
             yield connection
         finally:
             connection.close()
+            with self._lock:
+                self._in_use -= 1

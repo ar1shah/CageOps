@@ -18,7 +18,9 @@ TODAY = datetime(2026, 10, 15, 16, 0, tzinfo=UTC)  # 12:00 in New York
 def client(db, model_dir):
     app = create_app(
         settings=Settings(database_url="postgresql://x", redis_url="redis://x"),
-        api_settings=ApiSettings(model_artifact_dir=model_dir),
+        api_settings=ApiSettings(
+            model_artifact_dir=model_dir, cache_enabled=False, rate_limit_enabled=False
+        ),
         engine=db,
         configure_logs=False,
         poll=False,
@@ -215,3 +217,19 @@ def test_the_pool_is_visible_in_metrics(client, cast):
         "api_db_pool_checkout_timeouts_total",
     ):
         assert name in text, name
+
+
+def test_the_pool_high_water_mark_is_exposed_and_resets_between_scrapes(client, cast):
+    client.get("/fighters/1")
+
+    first = client.get("/metrics").text
+    second = client.get("/metrics").text
+
+    def peak(text_: str) -> float:
+        line = next(
+            ln for ln in text_.splitlines() if ln.startswith("api_db_pool_checked_out_peak ")
+        )
+        return float(line.split()[1])
+
+    assert peak(first) >= 1  # the profile query held a connection
+    assert peak(second) == 0  # nothing has held one since the last scrape

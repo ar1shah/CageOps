@@ -16,7 +16,7 @@ again from stored inputs (`dob`, `last_fight_date`) for the date being asked abo
 
 from __future__ import annotations
 
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 # Event dates on ufcstats and Wikipedia are US-local calendar dates and cards run into the late
@@ -31,6 +31,19 @@ def app_today(timezone: str = DEFAULT_TIMEZONE, *, now: datetime | None = None) 
     if moment.tzinfo is None:
         raise ValueError("`now` must be timezone-aware")
     return moment.astimezone(ZoneInfo(timezone)).date()
+
+
+# A card that starts on the evening of day D in the US can run past midnight New York time (a Las
+# Vegas card ends around 1 am Eastern), and its results are ingested hours later. For that stretch
+# its bouts are still `scheduled`, dated D, while "today" has become D+1.
+LATE_CARD_GRACE_DAYS = 1
+
+
+def earliest_upcoming_date(today: date) -> date:
+    """The oldest event date whose still-`scheduled` bouts count as upcoming: today, or yesterday
+    for a late card. The one definition, used by the feature builder (which bouts get feature
+    rows) and by `GET /events/upcoming` (which bouts are listed), so they cannot disagree."""
+    return today - timedelta(days=LATE_CARD_GRACE_DAYS)
 
 
 def date_relative_features(

@@ -177,6 +177,7 @@ class League:
         self.engine = engine
         self.run_id = registry.run_id
         self._events = count(1)
+        self._event_ids: dict[date, int] = {}  # one event per date: bouts on a date share a card
         self._fights = count(1)
 
     def fighter(self, fighter_id: int, name: str, **bio) -> int:
@@ -221,20 +222,23 @@ class League:
         if done and outcome is None:
             outcome = "win" if winner else "draw"
         with self.engine.begin() as conn:
-            event_id = conn.execute(
-                text(
-                    "INSERT INTO events (ufcstats_id, name, event_date) VALUES (:u, :n, :d)"
-                    " RETURNING id"
-                ),
-                {"u": f"{e:016x}", "n": f"UFC Test {e}", "d": on},
-            ).scalar_one()
+            event_id = self._event_ids.get(on)
+            if event_id is None:
+                event_id = conn.execute(
+                    text(
+                        "INSERT INTO events (ufcstats_id, name, event_date) VALUES (:u, :n, :d)"
+                        " RETURNING id"
+                    ),
+                    {"u": f"{e:016x}", "n": f"UFC Test {e}", "d": on},
+                ).scalar_one()
+                self._event_ids[on] = event_id
             fight_id = conn.execute(
                 text(
                     "INSERT INTO fights (ufcstats_id, event_id, fighter_a_id, fighter_b_id,"
                     " weight_class, gender, status, is_title_fight, outcome, winner_id, method,"
                     " scheduled_rounds, finish_round, finish_time_sec, has_round_stats,"
                     " result_source) VALUES (:u, :e, :a, :b, :wc, 'M', :status, :title,"
-                    " :outcome, :winner, :method, 3, :fr, :ft, :stats, :src) RETURNING id"
+                    " :outcome, :winner, :method, :rounds, :fr, :ft, :stats, :src) RETURNING id"
                 ),
                 {
                     "u": f"{n + 5000:016x}",
@@ -247,6 +251,7 @@ class League:
                     "outcome": outcome if done else None,
                     "winner": winner if done and outcome == "win" else None,
                     "method": method if done else None,
+                    "rounds": 3 if done else None,  # a scheduled bout has no round count (D-044)
                     "fr": finish_round if done else None,
                     "ft": 300 if done else None,
                     "stats": stats and done,
@@ -265,19 +270,11 @@ class League:
                     )
         return fight_id
 
-    def current(
-        self,
-        fighter_id: int,
-        *,
-        n_fights: int,
-        n_with_stats: int | None = None,
-        last_fight: date | None = None,
-        as_of: date = date(2026, 10, 15),
-        seed: int | None = None,
-        **overrides,
-    ) -> None:
-        """A `fighter_features_current` row. Rates are deterministic noise from `seed` (the
-        fighter id by default); counts follow `n_fights` / `n_with_stats`."""
+    def _feature_values(
+        self, fighter_id: int, n_fights: int, n_with_stats: int | None, seed: int | None
+    ) -> dict:
+        """History-derived columns: deterministic noise for the rates, counts that follow
+        `n_fights` / `n_with_stats`. No age_days or days_since_last_fight (the caller decides)."""
         rng = np.random.default_rng(fighter_id if seed is None else seed)
         n_with_stats = n_fights if n_with_stats is None else n_with_stats
         row: dict = {name: float(rng.normal(3, 1)) for name in f.NUMERIC_FEATURES}
@@ -296,8 +293,22 @@ class League:
                 if is_rate:
                     row[name] = None
         for derived in ("age_days", "days_since_last_fight"):
-            row.pop(derived)  # never stored (D-037)
-        row |= overrides
+            row.pop(derived)  # derived for the date asked about (D-037)
+        return row
+
+    def current(
+        self,
+        fighter_id: int,
+        *,
+        n_fights: int,
+        n_with_stats: int | None = None,
+        last_fight: date | None = None,
+        as_of: date = date(2026, 10, 15),
+        seed: int | None = None,
+        **overrides,
+    ) -> None:
+        """A `fighter_features_current` row."""
+        row = self._feature_values(fighter_id, n_fights, n_with_stats, seed) | overrides
         columns = {
             **row,
             "fighter_id": fighter_id,
@@ -320,6 +331,50 @@ class League:
             conn.execute(
                 text(f"INSERT INTO fighter_features_current ({names}) VALUES ({binds})"), columns
             )
+
+    def bout_features(
+        self,
+        fight_id: int,
+        fighter_id: int,
+        *,
+        event_date: date,
+        n_fights: int,
+        n_with_stats: int | None = None,
+        last_fight: date | None = None,
+        weight_class: str | None = "Lightweight",
+        seed: int | None = None,
+    ) -> None:
+        """A `fight_features` row for a SCHEDULED bout: the fighter's history as of the bout's own
+        event date, with the two calendar features computed against that date at 'build' time."""
+        from cageops_common.inference.asof import date_relative_features
+
+        with self.engine.connect() as conn:
+            dob = conn.execute(
+                text("SELECT dob FROM fighters WHERE id = :i"), {"i": fighter_id}
+            ).scalar_one()
+            bio = conn.execute(
+                text("SELECT height_cm, reach_cm, stance FROM fighters WHERE id = :i"),
+                {"i": fighter_id},
+            ).one()
+        row = self._feature_values(fighter_id, n_fights, n_with_stats, seed)
+        row |= date_relative_features(event_date, dob, last_fight)
+        columns = {
+            **row,
+            "fight_id": fight_id,
+            "fighter_id": fighter_id,
+            "height_cm": bio.height_cm,
+            "reach_cm": bio.reach_cm,
+            "stance": bio.stance,
+            "weight_class": weight_class,
+            "is_title_fight": None,
+            "scheduled_rounds": None,
+            "has_unresolved_prior_fight": False,
+            "load_run_id": self.run_id,
+        }
+        names = ", ".join(columns)
+        binds = ", ".join(f":{k}" for k in columns)
+        with self.engine.begin() as conn:
+            conn.execute(text(f"INSERT INTO fight_features ({names}) VALUES ({binds})"), columns)
 
 
 @pytest.fixture

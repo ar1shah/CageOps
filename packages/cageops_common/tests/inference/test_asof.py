@@ -6,7 +6,13 @@ from datetime import UTC, date, datetime
 
 import pytest
 
-from cageops_common.inference.asof import DEFAULT_TIMEZONE, app_today, date_relative_features
+from cageops_common.inference.asof import (
+    DEFAULT_TIMEZONE,
+    LATE_CARD_GRACE_DAYS,
+    app_today,
+    date_relative_features,
+    earliest_upcoming_date,
+)
 
 
 def test_the_default_zone_is_new_york():
@@ -83,3 +89,9 @@ def test_importing_it_does_not_load_numpy_or_lightgbm():
     )
     result = subprocess.run([sys.executable, "-I", "-c", code], capture_output=True, text=True)
     assert result.returncode == 0, result.stderr
+
+
+def test_a_late_card_gets_one_day_of_grace():
+    assert LATE_CARD_GRACE_DAYS == 1
+    assert earliest_upcoming_date(date(2026, 10, 18)) == date(2026, 10, 17)
+    assert earliest_upcoming_date(date(2026, 3, 1)) == date(2026, 2, 28)  # across a month end

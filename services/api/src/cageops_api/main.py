@@ -15,18 +15,31 @@ from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 
+import redis
+import redis.asyncio as aredis
 from fastapi import FastAPI, Request, Response
 from fastapi.responses import JSONResponse
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
+from redis.backoff import NoBackoff
+from redis.retry import Retry
 from sqlalchemy import Engine
 
+from cageops_api.cache import PredictionCache
 from cageops_api.config import ApiSettings, get_api_settings
 from cageops_api.db import Database
 from cageops_api.errors import install_error_handlers
+from cageops_api.features_watch import FeaturesWatch
 from cageops_api.metrics import ApiMetrics
 from cageops_api.middleware import RequestContextMiddleware
 from cageops_api.model_manager import ModelManager, ModelUnavailable
-from cageops_api.routers import fighters, predict
+from cageops_api.ratelimit import (
+    RateLimitConfig,
+    RateLimiter,
+    RateLimitMiddleware,
+    RouteTemplates,
+)
+from cageops_api.redis_guard import RedisGuard
+from cageops_api.routers import events, fighters, predict
 from cageops_common.config import Settings, get_settings
 from cageops_common.db.session import make_engine
 from cageops_common.logs import configure_logging
@@ -47,14 +60,16 @@ def create_app(
     settings: Settings | None = None,
     api_settings: ApiSettings | None = None,
     engine: Engine | None = None,
+    redis_client: redis.Redis | None = None,
     configure_logs: bool = True,
     poll: bool = True,
     clock: Callable[[], datetime] | None = None,
 ) -> FastAPI:
     """Build the app. Arguments exist for tests; the real app passes none and reads the
-    environment inside the lifespan, not here. `poll=False` starts no background poller (a test
-    then calls `app.state.model_manager.refresh()` itself). `clock` returns an aware datetime;
-    it is how tests pin "today"."""
+    environment inside the lifespan, not here. `redis_client` replaces the one built from
+    REDIS_URL (tests). `poll=False` starts no background poller (a test then calls
+    `app.state.model_manager.refresh()` and `app.state.features_watch.refresh()` itself). `clock`
+    returns an aware datetime; it is how tests pin "today"."""
     metrics = ApiMetrics()
 
     @asynccontextmanager
@@ -87,10 +102,82 @@ def create_app(
             metrics=metrics,
         )
         app.state.model_manager = manager
+        watch = FeaturesWatch(owned_engine, metrics)
+        app.state.features_watch = watch
+
+        timeout = own.redis_timeout_ms / 1000
+
+        def redis_kwargs(retry) -> dict:
+            return {
+                "socket_timeout": timeout,
+                "socket_connect_timeout": timeout,
+                "retry": retry,  # no retries: Redis must never make a request slower than not
+                "health_check_interval": 0,
+            }
+
+        # The cache runs inside sync routes (worker threads), so it uses the blocking client.
+        owned_redis = redis_client
+        if owned_redis is None and own.cache_enabled:
+            owned_redis = redis.Redis.from_url(
+                common.redis_url, **redis_kwargs(Retry(NoBackoff(), 0))
+            )
+        # The limiter runs on the event loop in a middleware, so it uses an asyncio client and
+        # needs no thread hop (D-043). Built here, inside the running loop.
+        limiter_redis: aredis.Redis | None = None
+        if own.rate_limit_enabled:
+            limiter_redis = aredis.Redis.from_url(
+                common.redis_url, **redis_kwargs(Retry(NoBackoff(), 0))
+            )
+        guard = RedisGuard(metrics)  # one view of Redis's health for the cache and the limiter
+        app.state.redis_guard = guard
+        app.state.cache = PredictionCache(
+            owned_redis if own.cache_enabled else None,
+            ttl_s=own.cache_ttl_s,
+            metrics=metrics,
+            guard=guard,
+        )
+        app.state.rate_limiter = None
+        app.state.route_templates = RouteTemplates.from_app(app)
+        if limiter_redis is not None:
+            keys = own.frontend_keys()
+            configured = bool(
+                own.frontend_api_key.get_secret_value()
+                or own.frontend_api_key_previous.get_secret_value()
+            )
+            if configured and not keys:
+                log.warning(
+                    "a frontend API key is set but shorter than 32 characters; "
+                    "the frontend client class is disabled"
+                )
+            app.state.rate_limiter = RateLimiter(
+                limiter_redis,
+                config=RateLimitConfig(
+                    enabled=True,
+                    per_minute=own.rate_limit_per_minute,
+                    burst=own.rate_limit_burst,
+                    trusted_proxies=own.trusted_proxies(),
+                    frontend_keys=keys,
+                    user_per_minute=own.frontend_user_rate_per_minute,
+                    user_burst=own.frontend_user_burst,
+                    key_per_minute=own.frontend_key_rate_per_minute,
+                    key_burst=own.frontend_key_burst,
+                ),
+                metrics=metrics,
+                guard=guard,
+            )
+
         # Load before taking traffic. A failure does not stop the app: it starts, reports not
         # ready (503 on /readyz and on predictions), and the poller keeps trying.
         await asyncio.to_thread(manager.refresh)
-        task = asyncio.create_task(manager.poll_forever()) if poll else None
+        await asyncio.to_thread(watch.refresh)
+
+        async def poll_forever() -> None:
+            while True:
+                await asyncio.sleep(own.model_poll_interval_s)
+                await asyncio.to_thread(manager.refresh)
+                await asyncio.to_thread(watch.refresh)
+
+        task = asyncio.create_task(poll_forever()) if poll else None
         log.info(
             "api started",
             extra={
@@ -106,6 +193,10 @@ def create_app(
                 task.cancel()
                 with contextlib.suppress(asyncio.CancelledError):
                     await task
+            if limiter_redis is not None:
+                await limiter_redis.aclose()
+            if redis_client is None and owned_redis is not None:
+                owned_redis.close()
             if engine is None:
                 owned_engine.dispose()
 
@@ -117,11 +208,20 @@ def create_app(
     )
     app.state.metrics = metrics
     app.state.clock = clock or (lambda: datetime.now(UTC))
-    metrics.watch_pool(lambda: getattr(app.state, "engine", None))
+    metrics.watch_pool(
+        lambda: getattr(app.state, "engine", None),
+        peak=lambda: (
+            database.take_peak() if (database := getattr(app.state, "database", None)) else None
+        ),
+    )
+    # Added last is outermost: the request context wraps the limiter, so a 429 is timed,
+    # labelled with its route template and logged like any other response.
+    app.add_middleware(RateLimitMiddleware)
     app.add_middleware(RequestContextMiddleware, metrics=metrics)
     install_error_handlers(app)
     app.include_router(fighters.router)
     app.include_router(predict.router)
+    app.include_router(events.router)
 
     @app.exception_handler(ModelUnavailable)
     async def model_unavailable(_: Request, exc: ModelUnavailable) -> JSONResponse:

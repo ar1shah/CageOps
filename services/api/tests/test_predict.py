@@ -81,7 +81,9 @@ def world(league, registry):
 def app(db, model_dir, clock):
     return create_app(
         settings=Settings(database_url="postgresql://x", redis_url="redis://x"),
-        api_settings=ApiSettings(model_artifact_dir=model_dir),
+        api_settings=ApiSettings(
+            model_artifact_dir=model_dir, cache_enabled=False, rate_limit_enabled=False
+        ),
         engine=db,
         configure_logs=False,
         poll=False,
@@ -453,7 +455,9 @@ def test_a_fighter_with_no_feature_row_is_503_features_unavailable(client):
 def test_no_model_is_503_model_unavailable(db, model_dir, clock, league):
     app = create_app(
         settings=Settings(database_url="postgresql://x", redis_url="redis://x"),
-        api_settings=ApiSettings(model_artifact_dir=model_dir),
+        api_settings=ApiSettings(
+            model_artifact_dir=model_dir, cache_enabled=False, rate_limit_enabled=False
+        ),
         engine=db, configure_logs=False, poll=False, clock=clock,
     )  # fmt: skip
     with TestClient(app) as client:
@@ -491,7 +495,12 @@ def test_a_prediction_is_counted_and_timed_by_stage(app, client):
 def test_the_number_of_contributed_features_follows_the_setting(db, model_dir, clock, world):
     app = create_app(
         settings=Settings(database_url="postgresql://x", redis_url="redis://x"),
-        api_settings=ApiSettings(model_artifact_dir=model_dir, predict_top_features=2),
+        api_settings=ApiSettings(
+            model_artifact_dir=model_dir,
+            predict_top_features=2,
+            cache_enabled=False,
+            rate_limit_enabled=False,
+        ),
         engine=db, configure_logs=False, poll=False, clock=clock,
     )  # fmt: skip
     with TestClient(app) as client:

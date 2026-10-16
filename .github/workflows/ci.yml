@@ -74,3 +74,16 @@ jobs:
       # Does not pull images or start containers.
       - name: Validate docker-compose.yml
         run: docker compose --env-file .env.example config --quiet
+
+      - name: Validate docker-compose.yml with the api profile
+        run: docker compose --env-file .env.example --profile api config --quiet
+
+      # Build the API image so the Dockerfile cannot rot, then check the BUILT image: it must run
+      # as a non-root numeric user, import the API and LightGBM, and NOT contain the trainer, the
+      # worker or the scraper (each import must fail with ModuleNotFoundError). The pytest guard
+      # only sees the dev venv, where all of them are installed. Nothing is pushed (2c / Phase 6).
+      - name: Build the API image
+        run: docker build -f infra/docker/api.Dockerfile -t cageops-api:ci .
+
+      - name: Check the API image
+        run: scripts/check_api_image.sh cageops-api:ci

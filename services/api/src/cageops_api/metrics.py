@@ -37,14 +37,27 @@ class PoolCollector:
     """Reads the connection pool at scrape time, so the numbers are never stale and nothing has
     to update them. `engine` is a callable because the engine is built when the app starts."""
 
-    def __init__(self, engine: Callable[[], Engine | None]) -> None:
+    def __init__(
+        self,
+        engine: Callable[[], Engine | None],
+        peak: Callable[[], int | None] | None = None,
+    ) -> None:
         self._engine = engine
+        self._peak = peak
 
     def collect(self) -> Iterable[GaugeMetricFamily]:
         engine = self._engine()
         pool = getattr(engine, "pool", None)
         if pool is None or not hasattr(pool, "checkedout"):
             return
+        peak = self._peak() if self._peak is not None else None
+        if peak is not None:
+            family = GaugeMetricFamily(
+                "api_db_pool_checked_out_peak",
+                "Most connections checked out at once since the previous scrape.",
+            )
+            family.add_metric([], peak)
+            yield family
         for name, doc, value in (
             ("api_db_pool_checked_out", "Connections in use right now.", pool.checkedout()),
             ("api_db_pool_checked_in", "Pooled connections sitting idle.", pool.checkedin()),
@@ -154,5 +167,60 @@ class ApiMetrics:
             registry=self.registry,
         )
 
-    def watch_pool(self, engine: Callable[[], Engine | None]) -> None:
-        self.registry.register(PoolCollector(engine))
+        # -- the prediction cache (D-042) ---------------------------------------------------
+        self.cache_hits = Counter(
+            "api_cache_hits_total", "Predictions answered from Redis.", registry=self.registry
+        )
+        self.cache_misses = Counter(
+            "api_cache_misses_total",
+            "Predictions Redis was asked for and did not have (they are then computed).",
+            registry=self.registry,
+        )
+        self.cache_bypassed = Counter(
+            "api_cache_bypassed_total",
+            "Predictions computed without consulting the cache: disabled, no features state yet, "
+            "or Redis unavailable.",
+            registry=self.registry,
+        )
+        self.redis_errors = Counter(
+            "api_redis_errors_total",
+            "Redis calls that failed or timed out. The API failed open each time.",
+            ["op"],
+            registry=self.registry,
+        )
+
+        # -- what the features and the registry looked like at the last poll ----------------
+        self.features_build_id = Gauge(
+            "api_features_build_id",
+            "load_runs.id of the latest features build the cache key is using.",
+            registry=self.registry,
+        )
+        self.features_inputs_match = Gauge(
+            "api_features_inputs_match_build",
+            "1 when what the features were built from is what the database holds now; 0 when a "
+            "result, bio or stat changed since the last features rebuild.",
+            registry=self.registry,
+        )
+
+        # -- rate limiting (D-043) ----------------------------------------------------------
+        self.ratelimited = Counter(
+            "api_ratelimited_total",
+            "Requests refused with 429, by client class (public | frontend) and by which bucket "
+            "was empty (ip | user | key).",
+            ["client_class", "scope"],
+            registry=self.registry,
+        )
+        self.ratelimit_ignored = Counter(
+            "api_ratelimit_ignored_headers_total",
+            "Headers that were sent but not believed: a forwarded client IP without a valid API "
+            "key, an API key that did not match, or a malformed client IP.",
+            ["reason"],
+            registry=self.registry,
+        )
+
+    def watch_pool(
+        self,
+        engine: Callable[[], Engine | None],
+        peak: Callable[[], int | None] | None = None,
+    ) -> None:
+        self.registry.register(PoolCollector(engine, peak))

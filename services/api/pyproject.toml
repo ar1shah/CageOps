@@ -7,6 +7,7 @@ dependencies = [
     "cageops-common[inference]",
     "fastapi",
     "prometheus-client>=0.26.0",
+    "redis>=8.1.0",
     "uvicorn[standard]",
 ]
 

@@ -7,11 +7,20 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse
 
+from cageops_api.cache import PredictionCache, cache_key
 from cageops_api.db import Database
 from cageops_api.errors import ErrorBody
+from cageops_api.features_watch import FeaturesWatch
 from cageops_api.metrics import ApiMetrics
 from cageops_api.model_manager import ModelManager
-from cageops_api.predict import predict_matchup, stage
+from cageops_api.predict import (
+    PredictionCore,
+    canonical_weight_class,
+    compute_core,
+    orient,
+    record_prediction,
+    stage,
+)
 from cageops_api.routers.fighters import get_database
 from cageops_api.schemas import PredictRequest, PredictResponse
 from cageops_common.inference.asof import app_today
@@ -58,16 +67,60 @@ def predict(
     app = request.app
     manager: ModelManager = app.state.model_manager
     metrics: ApiMetrics = app.state.metrics
+    cache: PredictionCache = app.state.cache
+    watch: FeaturesWatch = app.state.features_watch
     serving = manager.require()  # one reference, used for this whole request (D-036)
     as_of = app_today(app.state.settings.app_timezone, now=app.state.clock())
+    top_n = app.state.api_settings.predict_top_features
 
-    response = predict_matchup(
-        request=body,
-        db=db,
-        serving=serving,
-        as_of=as_of,
-        top_n=app.state.api_settings.predict_top_features,
-        metrics=metrics,
-    )
+    # Validate and normalize the division FIRST. The key then only ever holds a vocabulary entry:
+    # "  lightweight " and "Lightweight" are one entry, and a misspelling is a 422 on every request,
+    # never a hit on a neighbour's entry.
+    if body.weight_class is not None:
+        body = body.model_copy(
+            update={
+                "weight_class": canonical_weight_class(
+                    body.weight_class, serving.model.weight_classes
+                )
+            }
+        )
+
+    # The key is built from the request and from facts polled in the background (model version,
+    # features build, input fingerprint), so a hit costs no database round trip at all.
+    features = watch.state
+    key: str | None = None
+    core: PredictionCore | None = None
+    status = "bypass"
+    if cache.enabled and features is not None:
+        title = bool(body.is_title_fight)
+        key = cache_key(
+            model_version=serving.version,
+            build_id=features.build_id,
+            inputs_sha12=features.inputs_sha12,
+            fighter_a_id=body.fighter_a_id,
+            fighter_b_id=body.fighter_b_id,
+            weight_class=body.weight_class,
+            scheduled_rounds=body.scheduled_rounds or (5 if title else 3),
+            is_title_fight=title,
+            top_n=top_n,
+            as_of=as_of,
+        )
+        with stage(metrics, "cache"):
+            core, status = cache.get(key)
+        if core is not None and core.model_version != serving.version:
+            core, status = None, "miss"  # belt and braces: the key already says so
+    else:
+        metrics.cache_bypassed.inc()
+
+    if core is None:
+        core = compute_core(
+            request=body, db=db, serving=serving, as_of=as_of, top_n=top_n, metrics=metrics
+        )
+        if key is not None:
+            with stage(metrics, "cache"):
+                cache.set(key, core)
+
+    record_prediction(metrics, core)
+    response = orient(core, body.fighter_a_id)
     with stage(metrics, "serialize"):
-        return JSONResponse(content=response.model_dump(mode="json"))
+        return JSONResponse(content=response.model_dump(mode="json"), headers={"X-Cache": status})

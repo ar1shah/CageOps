@@ -302,6 +302,78 @@ uv run python -m cageops_trainer activate 20261014-225801
 - **A version's row says what it was trained on:** `data_cutoff` is the last event date the model was fit on (end of the training split); `config.dataset_last_event` is the last event date in the data the run read; `features_output_sha256` and `config.inputs_sha256` identify the features; `config` also holds the seed, splits, feature lists, parameters, library versions, git sha and each artifact's sha256.
 - **Artifacts are not in git.** `data/models/` is gitignored. A lost directory can be recreated by training again with the stored seed, splits and library versions on the same features; the registry row stays valid for its metrics either way. An unwanted inactive version is removed with `DELETE FROM model_versions WHERE version = '...'` plus its directory (the active one can't be activated away without activating another, so deactivate it that way first).
 
+## The API
+
+The prediction service (`services/api`): `GET /fighters`, `GET /fighters/{id}`, `POST /predict`, `GET /events/upcoming`, `/healthz`, `/readyz`, `/metrics`, docs at `/docs`. Needs `docker compose up -d`, a migrated database, a features build (`features rebuild`) and an **active** model (`cageops_trainer activate`).
+
+**Run it**
+
+```bash
+# on the host, for development
+uv run --package cageops-api uvicorn cageops_api.main:app --port 8000 --no-proxy-headers --no-access-log
+
+# in Docker: build the image, start it next to Postgres and Redis, read the models from ./data/models
+docker compose --profile api up -d --build api
+docker compose ps api              # "healthy" means /readyz answered 200
+docker compose logs -f api         # JSON, one line per request
+docker compose --profile api stop api
+```
+
+**Ready or not.** `/healthz` is 200 whenever the process answers and does no I/O. `/readyz` is 200 only with a verified model loaded and a database that answered within three polls; otherwise 503 with the reason (`no active model version`, `artifact ... does not match its recorded sha256`, `database unreachable`). Redis is never a readiness condition: the API computes uncached and counts the failure. A container is "healthy" in Docker when `/readyz` is 200.
+
+**Switch models without a restart**
+
+```bash
+uv run python -m cageops_trainer list
+uv run python -m cageops_trainer activate 20261014-225801
+curl -s localhost:8000/readyz        # model_version changes within MODEL_POLL_INTERVAL_S (30 s)
+```
+
+- A version is loaded only after every file matches the checksum the registry stored and the manifest's feature names equal the code's. If it does not, the old version keeps serving, `api_model_reload_total{result="failure"}` counts it, and the log line `model_reload_failed` says why. That version is not retried for `MODEL_RELOAD_RETRY_S`.
+- With no active row at startup the API starts and says not ready; it never falls back to another file.
+- Deactivating every version by hand does not take a running API down: it keeps serving the verified model and logs one warning (`api_model_active_in_db` goes to 0).
+- The container reads `./data/models` read-only, by version directory (`MODEL_ARTIFACT_DIR/<version>`), never the path stored in the registry.
+
+**The cache.** `/predict` and `/events/upcoming` are cached in Redis; `X-Cache` says `hit`, `miss`, `partial` (a list with some of each) or `bypass`. The key includes the model version, the features build, a fingerprint of what the build read, the matchup, its context and today's date, so a new model, a rebuild, an ingested result and midnight (New York) each start a fresh set. To empty it by hand: `docker compose exec redis redis-cli --scan --pattern 'pred:*' | xargs -r docker compose exec -T redis redis-cli del` (`FLUSHDB` also clears the rate-limit buckets and the ingestion queue's db 0 neighbours, so prefer the pattern). Turn it off with `CACHE_ENABLED=false`.
+
+**Rate limiting.** Per client, a token bucket in Redis; 429 with `Retry-After`. `/healthz`, `/readyz` and `/metrics` are exempt. Redis down means allowed.
+- Behind a reverse proxy set `TRUSTED_PROXY_CIDRS` to the proxy's network, or every user looks like the proxy.
+- The Next.js frontend sends `X-API-Key` (value `FRONTEND_API_KEY`, 32+ characters, `openssl rand -hex 32`) and the end user's address in `X-CageOps-Client-IP`. The address is believed only with a valid key. Rotate by setting the new key as `FRONTEND_API_KEY` and the old one as `FRONTEND_API_KEY_PREVIOUS`, deploy, then clear the old one.
+- To see who is being limited: `api_ratelimited_total{client_class,scope}` and `api_ratelimit_ignored_headers_total{reason}` in `/metrics`.
+
+**What to look at in `/metrics`**
+
+| metric | tells you |
+|---|---|
+| `api_request_duration_seconds{route,status}` | latency by route template (p50/p95/p99 with `histogram_quantile`) |
+| `api_predict_stage_seconds{stage}` | where a prediction spends its time: `db`, `assemble`, `model`, `build`, `serialize`, `cache` |
+| `api_cache_hits_total` / `_misses_total` / `_bypassed_total`, `api_redis_errors_total{op}` | cache effectiveness and Redis health |
+| `api_db_pool_checked_out`, `api_db_pool_checkout_seconds`, `api_db_pool_checkout_timeouts_total` | whether the connection pool is the bottleneck |
+| `api_predictions_with_stats_gap_total`, `api_predictions_features_stale_total` | how often a prediction was served with incomplete rates or features |
+| `api_features_inputs_match_build` | 0 means a result, bio or stat changed since the last `features rebuild` |
+| `api_model_info{version}`, `api_model_reload_total{result}` | which model is serving, and reload outcomes |
+
+**Check the built image** (CI runs this; it fails on a trainer, worker or scraper in the image, a root user, a missing healthcheck, or growth past the budget):
+
+```bash
+docker build -f infra/docker/api.Dockerfile -t cageops-api:local .
+scripts/check_api_image.sh cageops-api:local
+```
+
+**Load test** (D-046; about 15 minutes for the whole matrix, and it needs the machine quiet):
+
+```bash
+docker build -f infra/docker/api.Dockerfile -t cageops-api:local .
+uv run python scripts/loadtest/prepare_db.py --force     # cageops_loadtest: dev data + a synthetic card
+uv run python scripts/loadtest/make_inputs.py            # unique same-division pairs from real data
+uv run python scripts/loadtest/run_loadtest.py --fresh   # each run: restart API, flush, k6, scrape, validate
+uv run python scripts/loadtest/run_loadtest.py --only cold_16 --duration 10s   # one run
+```
+
+Each run lands in `data/bench/api/results.jsonl` with the k6 percentiles, the server's own quantiles and stage timers, the pool statistics, and `valid` / `problems`. A run that fails its validity checks says why; do not quote it. The limiter is off except in the runs marked ON, and the API uses its own Redis database (3) so flushing it touches nothing else.
+
+**Not ready, what to check.** `curl -s localhost:8000/readyz` names the reason. `database unreachable`: is Postgres up and `DATABASE_URL` right (inside compose the host is `postgres`)? `no active model version`: run `cageops_trainer list` and `activate`. `does not match its recorded sha256`: the files in `data/models/<version>` were changed or copied incompletely; retrain or restore them. `prediction 503 features_unavailable`: that fighter has no row in `fighter_features_current`; run `features rebuild`.
+
 ## Production
 
 _Written in Phase 2c (VM + docker compose) and rewritten in Phase 6 (k3s)._

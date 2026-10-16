@@ -1,0 +1,28 @@
+# What never goes into a build context: secrets, data, history, caches, and everything the API
+# image does not run. A smaller context is also a faster build.
+.git
+.github
+.venv
+.env
+.env.*
+!.env.example
+data/
+web/
+docs/
+infra/
+scripts/
+**/__pycache__
+**/*.py[cod]
+**/.pytest_cache
+**/.ruff_cache
+**/node_modules
+# Tests and the other services are not in the API image, and must not be what a COPY pulls in.
+**/tests/
+services/scraper/**
+services/worker/**
+services/trainer/**
+!services/scraper/pyproject.toml
+!services/worker/pyproject.toml
+!services/trainer/pyproject.toml
+*.md
+!packages/**/README.md

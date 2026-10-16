@@ -36,6 +36,10 @@ def route_template(scope: Scope) -> str:
 
 
 def client_ip(scope: Scope) -> str | None:
+    """The address the rate limiter attributed the request to, else the socket peer."""
+    attributed = (scope.get("cageops_client") or {}).get("ip")
+    if attributed:
+        return attributed
     client = scope.get("client")
     return client[0] if client else None
 
@@ -81,6 +85,7 @@ class RequestContextMiddleware:
                             "status": state["status"],
                             "duration_ms": round(elapsed * 1000, 2),
                             "client_ip": client_ip(scope),
+                            "client_class": (scope.get("cageops_client") or {}).get("class"),
                         },
                     )
         finally:

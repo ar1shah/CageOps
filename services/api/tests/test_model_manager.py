@@ -31,6 +31,8 @@ def make_app(db, model_dir):
             settings=Settings(database_url="postgresql://x", redis_url="redis://x"),
             api_settings=ApiSettings(
                 model_artifact_dir=model_dir,
+                cache_enabled=False,
+                rate_limit_enabled=False,
                 model_poll_interval_s=poll_interval_s,
                 model_reload_retry_s=retry_s,
             ),
@@ -333,19 +335,27 @@ def test_a_database_that_stops_answering_turns_ready_off_after_a_few_polls_but_k
 
 
 def test_the_background_poller_picks_up_a_new_version_by_itself(make_app, registry):
+    """The poller is timed by nature (it sleeps MODEL_POLL_INTERVAL_S between polls), so the test
+    does not guess how long that takes: it waits on an event the poller's own refresh sets."""
     registry.add(V1, seed=1, active=True)
     registry.add(V2, seed=2)
-    app = make_app(poll=True, poll_interval_s=0.05)
+    app = make_app(poll=True, poll_interval_s=0.01)
+    switched = threading.Event()
     with TestClient(app):
         manager = app.state.model_manager
         assert manager.require().version == V1
-        registry.activate(V2)
-        deadline = threading.Event()
-        for _ in range(100):
-            if manager.require().version == V2:
-                break
-            deadline.wait(0.05)
+        real_refresh = manager.refresh
 
+        def refresh():
+            outcome = real_refresh()
+            if outcome == "loaded":
+                switched.set()
+            return outcome
+
+        manager.refresh = refresh  # the poller looks the method up on every tick
+        registry.activate(V2)
+
+        assert switched.wait(30), "the poller never loaded the new version"
         assert manager.require().version == V2
 
 
@@ -362,7 +372,7 @@ def test_a_request_started_before_a_switch_finishes_on_the_old_model(make_app, r
     def slow():
         serving = app.state.model_manager.require()  # the one copy this request will use
         started.set()
-        proceed.wait(10)
+        assert proceed.wait(30), "the test never released the request"
         return {"version": serving.version, "p": float(predict(serving)[0])}
 
     @app.get("/_fast")
@@ -374,13 +384,14 @@ def test_a_request_started_before_a_switch_finishes_on_the_old_model(make_app, r
         result = {}
         worker = threading.Thread(target=lambda: result.update(client.get("/_slow").json()))
         worker.start()
-        assert started.wait(10)
+        assert started.wait(30)  # the request holds its model reference and is parked
 
         registry.activate(V2)
         assert app.state.model_manager.refresh() == "loaded"
         new = client.get("/_fast").json()  # a request after the switch sees the new model
         proceed.set()
-        worker.join(10)
+        worker.join(30)
+        assert not worker.is_alive()
 
     assert new["version"] == V2
     assert result["version"] == V1  # the in-flight request finished on the old one
@@ -390,28 +401,98 @@ def test_a_request_started_before_a_switch_finishes_on_the_old_model(make_app, r
     assert expected_v1 != expected_v2
 
 
-def test_hammering_predictions_while_switching_never_mixes_two_models(make_app, registry, tiny):
-    """Every response is internally consistent: the version it reports is the version whose
-    output it carries, across many switches and many concurrent readers."""
+def test_every_reader_is_mid_prediction_at_every_switch_and_none_sees_a_mixed_model(
+    make_app, registry, tiny
+):
+    """The overlap is forced, not hoped for. Each round, on barriers:
+
+        1. every reader copies the current model reference           (all hold the OLD model)
+        2. the switch happens, here, with all of them parked
+        3. every reader predicts with the reference it already holds (concurrently, on the OLD one)
+        4. every reader then asks for the model again and must get the NEW one
+
+    A reader that used the manager's attribute instead of its own copy would get the new model's
+    output under the old version's name in step 3, and the comparison below would catch it. Nothing
+    here sleeps or depends on how fast anything runs; the 30 s timeouts only turn a hang into a
+    failure."""
+    versions = [V1, V2, V3, V1, V2, V3, V1]
+    seeds = {V1: 1, V2: 2, V3: 3}
     registry.add(V1, seed=1, active=True)
     registry.add(V2, seed=2)
     registry.add(V3, seed=3)
-    expected = {
-        V1: predict_for(tiny, 1),
-        V2: predict_for(tiny, 2),
-        V3: predict_for(tiny, 3),
-    }
+    expected = {v: predict_for(tiny, seed) for v, seed in seeds.items()}
+    assert len({expected[v].tobytes() for v in versions}) == 3  # the three models really differ
+
+    readers = 6
+    rounds = len(versions) - 1
+    holding = threading.Barrier(readers + 1)  # readers + this thread
+    switched = threading.Barrier(readers + 1)
+    errors: list[str] = []
+    answered: dict[int, list[tuple[str, str]]] = {}
+
+    app = make_app()
+    with TestClient(app):
+        manager = app.state.model_manager
+
+        def reader(index: int) -> None:
+            trail: list[tuple[str, str]] = []
+            try:
+                for round_number in range(rounds):
+                    serving = manager.require()
+                    if serving.version != versions[round_number]:
+                        errors.append(f"round {round_number}: started on {serving.version}")
+                    holding.wait(30)  # 1: everyone holds a reference
+                    switched.wait(30)  # 2: ... and the switch has happened
+                    output = predict(serving)  # 3: the reference held before the switch
+                    if not np.array_equal(output, expected[serving.version]):
+                        errors.append(f"round {round_number}: output is not {serving.version}'s")
+                    fresh = manager.require()  # 4: a new request gets the new model
+                    trail.append((serving.version, fresh.version))
+                    if fresh.version != versions[round_number + 1]:
+                        errors.append(
+                            f"round {round_number}: new request got {fresh.version}, "
+                            f"wanted {versions[round_number + 1]}"
+                        )
+            except threading.BrokenBarrierError:
+                errors.append(f"reader {index}: a barrier broke or timed out")
+            answered[index] = trail
+
+        threads = [threading.Thread(target=reader, args=(i,)) for i in range(readers)]
+        for t in threads:
+            t.start()
+        for round_number in range(rounds):
+            holding.wait(30)  # every reader holds the current model
+            registry.activate(versions[round_number + 1])
+            assert manager.refresh() == "loaded"
+            switched.wait(30)  # release them, still holding the old reference
+        for t in threads:
+            t.join(30)
+            assert not t.is_alive()
+
+    assert errors == []
+    for trail in answered.values():
+        assert len(trail) == rounds
+        assert trail == [(versions[r], versions[r + 1]) for r in range(rounds)]
+
+
+def test_readers_that_never_stop_see_only_whole_models_across_many_switches(
+    make_app, registry, tiny
+):
+    """The free-running companion: no choreography, so it can only ever fail, never be flaky. Every
+    output must be exactly the output of the version it was read under. (It makes no claim about
+    which versions a reader happened to see: that is what the barrier test above forces.)"""
+    registry.add(V1, seed=1, active=True)
+    registry.add(V2, seed=2)
+    registry.add(V3, seed=3)
+    expected = {V1: predict_for(tiny, 1), V2: predict_for(tiny, 2), V3: predict_for(tiny, 3)}
     app = make_app()
     stop = threading.Event()
     errors: list[str] = []
-    seen: set[str] = set()
 
     def reader(manager):
         while not stop.is_set():
             serving = manager.require()
-            got = predict(serving)
-            seen.add(serving.version)
-            if not np.array_equal(got, expected[serving.version]):
+            if not np.array_equal(predict(serving), expected[serving.version]):
                 errors.append(f"{serving.version}: output belongs to another model")
 
     with TestClient(app):
@@ -424,10 +505,9 @@ def test_hammering_predictions_while_switching_never_mixes_two_models(make_app, 
             assert manager.refresh() == "loaded"
         stop.set()
         for t in threads:
-            t.join(10)
+            t.join(30)
 
     assert errors == []
-    assert seen == {V1, V2, V3}
 
 
 def predict_for(tiny, seed):
