@@ -15,7 +15,6 @@ import time
 from datetime import UTC, datetime
 
 import pytest
-import redis
 from fastapi.testclient import TestClient
 
 from cageops_api.config import ApiSettings
@@ -125,10 +124,13 @@ def test_no_configured_key_means_no_frontend_class_even_if_one_is_sent():
 
 
 @pytest.fixture
-def make_app(db, model_dir, redis_client):
-    def build(*, client=("203.0.113.9", 50000), redis_override=None, **settings):
+def make_app(db, model_dir, redis_client, redis_test_url):
+    """`redis_url` is where the limiter's own (asyncio) client connects: the scratch database the
+    `redis_client` fixture empties, or any URL a test gives (a dead one, to fail open)."""
+
+    def build(*, client=("203.0.113.9", 50000), redis_url=None, **settings):
         app = create_app(
-            settings=Settings(database_url="postgresql://x", redis_url="redis://x"),
+            settings=Settings(database_url="postgresql://x", redis_url=redis_url or redis_test_url),
             api_settings=ApiSettings(
                 model_artifact_dir=model_dir,
                 cache_enabled=False,
@@ -137,7 +139,7 @@ def make_app(db, model_dir, redis_client):
                 **settings,
             ),
             engine=db,
-            redis_client=redis_override or redis_client,
+            redis_client=redis_client,  # unused: the cache is off in these tests
             configure_logs=False,
             poll=False,
             clock=lambda: datetime(2026, 10, 15, 16, 0, tzinfo=UTC),
@@ -413,15 +415,11 @@ def test_the_key_never_appears_in_logs_metrics_or_responses(make_app, access_lin
 # -- failing open --------------------------------------------------------------------------------
 
 
-def dead_redis() -> redis.Redis:
-    return redis.Redis(
-        host="127.0.0.1", port=1, socket_timeout=0.05, socket_connect_timeout=0.05,
-        retry=redis.retry.Retry(redis.backoff.NoBackoff(), 0),
-    )  # fmt: skip
+DEAD_REDIS_URL = "redis://127.0.0.1:1/0"  # nothing listens on port 1
 
 
 def test_redis_down_allows_the_request_and_counts_it(make_app):
-    app, client = make_app(rate_limit_burst=1, redis_override=dead_redis())
+    app, client = make_app(rate_limit_burst=1, redis_url=DEAD_REDIS_URL)
     with client:
         codes = [hit(client).status_code for _ in range(5)]
         ready = hit(client, "/readyz").status_code
@@ -437,3 +435,29 @@ def test_disabled_means_no_limiting_and_no_redis_use(make_app, redis_client):
         assert [hit(client).status_code for _ in range(5)] == [404] * 5
 
     assert redis_client.keys("rl:*") == []
+
+
+def test_the_limit_check_runs_on_the_event_loop_not_in_a_worker_thread(make_app):
+    """The check is awaited, not handed to a thread: the hop was the cost (D-043, BENCHMARKS.md)."""
+    import inspect
+    import threading
+
+    from cageops_api.ratelimit import RateLimiter
+
+    assert inspect.iscoroutinefunction(RateLimiter.check)
+
+    app, client = make_app(rate_limit_burst=5)
+    seen: list[str] = []
+    with client:
+        limiter = app.state.rate_limiter
+        real = limiter._script
+
+        async def spy(*args, **kwargs):
+            seen.append(threading.current_thread().name)
+            return await real(*args, **kwargs)
+
+        limiter._script = spy
+        assert hit(client).status_code == 404
+
+    assert len(seen) == 1
+    assert "anyio-worker" not in seen[0] and "ThreadPoolExecutor" not in seen[0]

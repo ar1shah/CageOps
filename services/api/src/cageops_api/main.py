@@ -16,6 +16,7 @@ from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 
 import redis
+import redis.asyncio as aredis
 from fastapi import FastAPI, Request, Response
 from fastapi.responses import JSONResponse
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
@@ -104,15 +105,28 @@ def create_app(
         watch = FeaturesWatch(owned_engine, metrics)
         app.state.features_watch = watch
 
+        timeout = own.redis_timeout_ms / 1000
+
+        def redis_kwargs(retry) -> dict:
+            return {
+                "socket_timeout": timeout,
+                "socket_connect_timeout": timeout,
+                "retry": retry,  # no retries: Redis must never make a request slower than not
+                "health_check_interval": 0,
+            }
+
+        # The cache runs inside sync routes (worker threads), so it uses the blocking client.
         owned_redis = redis_client
-        if owned_redis is None and (own.cache_enabled or own.rate_limit_enabled):
-            timeout = own.redis_timeout_ms / 1000
+        if owned_redis is None and own.cache_enabled:
             owned_redis = redis.Redis.from_url(
-                common.redis_url,
-                socket_timeout=timeout,
-                socket_connect_timeout=timeout,
-                retry=Retry(NoBackoff(), 0),  # fail fast: the cache must never be slower than not
-                health_check_interval=0,
+                common.redis_url, **redis_kwargs(Retry(NoBackoff(), 0))
+            )
+        # The limiter runs on the event loop in a middleware, so it uses an asyncio client and
+        # needs no thread hop (D-043). Built here, inside the running loop.
+        limiter_redis: aredis.Redis | None = None
+        if own.rate_limit_enabled:
+            limiter_redis = aredis.Redis.from_url(
+                common.redis_url, **redis_kwargs(Retry(NoBackoff(), 0))
             )
         guard = RedisGuard(metrics)  # one view of Redis's health for the cache and the limiter
         app.state.redis_guard = guard
@@ -124,7 +138,7 @@ def create_app(
         )
         app.state.rate_limiter = None
         app.state.route_templates = RouteTemplates.from_app(app)
-        if own.rate_limit_enabled and owned_redis is not None:
+        if limiter_redis is not None:
             keys = own.frontend_keys()
             configured = bool(
                 own.frontend_api_key.get_secret_value()
@@ -136,7 +150,7 @@ def create_app(
                     "the frontend client class is disabled"
                 )
             app.state.rate_limiter = RateLimiter(
-                owned_redis,
+                limiter_redis,
                 config=RateLimitConfig(
                     enabled=True,
                     per_minute=own.rate_limit_per_minute,
@@ -179,6 +193,8 @@ def create_app(
                 task.cancel()
                 with contextlib.suppress(asyncio.CancelledError):
                     await task
+            if limiter_redis is not None:
+                await limiter_redis.aclose()
             if redis_client is None and owned_redis is not None:
                 owned_redis.close()
             if engine is None:

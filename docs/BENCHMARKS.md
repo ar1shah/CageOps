@@ -165,7 +165,7 @@ predictions were committed before any run, so the results can contradict them.
 
 Mixed, by endpoint (k6, ms): predict p50 23.4 / p95 72.2; `GET /fighters?search=` p50 50.6 / p95 83.0; `GET /fighters/{id}` p50 53.8 / p95 87.1; `GET /events/upcoming` (36 bouts, cached after the first) p50 40.9 / p95 69.3. At 16 clients on one saturated process every endpoint queues, which is why a cheap cached `upcoming` sits at 41 ms.
 
-**The limiter's per-request cost, with the numbers side by side**
+**The limiter's per-request cost, with the numbers side by side: BEFORE the fix** (the first version ran its blocking Redis call in a worker thread; the fix and the "after" numbers follow)
 
 | | limiter off | limiter ON | difference |
 |---|---|---|---|
@@ -175,7 +175,39 @@ Mixed, by endpoint (k6, ms): predict p50 23.4 / p95 72.2; `GET /fighters?search=
 | open model, 682 req/s: p50 / p95 / p99 (ms) | 0.85 / 2.21 / 18.6 | 1.28 / **218.7** / 233 | the limiter-on server could not keep 682 req/s without dropping 216 iterations |
 | the same open-model run in the first pass of this test (image without `OMP_NUM_THREADS=1`) | 0.84 / 2.12 / 18.1 | 1.19 / **68.7** / 148 | valid there; the tail is large in both passes |
 
-Reading it: 0.39 ms is one Redis round trip (an `EVALSHA`) plus a thread hop (`anyio.to_thread`), and because a cached prediction costs only 0.73 ms to serve, it is a large fraction. The open-model rows are the more important finding: at an arrival rate that is 50% of the limiter-off capacity, the limiter-on server is at about 75% utilisation (682 x 1.12 ms) and its tail latency explodes (p95 69 to 219 ms) while its throughput does not look much worse. A cheap request plus a per-request thread hop plus Redis is GIL and scheduling contention, not Redis latency (the cache stage averaged 2.2 ms with the limiter on against 3.1 ms off in the closed loop, so Redis itself is not slower). I did not isolate the cause further.
+Reading it: 0.39 ms is one Redis round trip (an `EVALSHA`) plus a thread hop (`anyio.to_thread`), and because a cached prediction costs only 0.73 ms to serve, it is a large fraction. The open-model rows are the more important finding: at an arrival rate that is 50% of the limiter-off capacity, the limiter-on server is at about 75% utilisation (682 x 1.12 ms) and its tail latency explodes (p95 69 to 219 ms) while its throughput does not look much worse. The cause was isolated afterwards, and fixed: it is the thread hop contending for the interpreter lock, not Redis latency (the cache stage averaged 2.2 ms with the limiter on against 3.1 ms off in the closed loop). See "The limiter, found and fixed" below, which has the after numbers.
+
+**The limiter, found and fixed** (same day, same image otherwise; commit after `5bf9ebf`)
+
+*Cause, measured before changing anything.* The pieces timed alone with no other load (5,000 calls each on one connection, `Redis` on localhost, 100 ms timeout):
+
+| what | median | p95 | p99 |
+|---|---|---|---|
+| the sync `EVALSHA` round trip, called in the calling thread | 130 us | 232 us | 678 us |
+| `anyio.to_thread.run_sync(no-op)` on an idle loop | 54 us | 92 us | 176 us |
+| thread hop + sync `EVALSHA` (what the limiter did) | 240 us | 718 us | 1,296 us |
+| the same call awaited on an asyncio Redis client, no thread | 146 us | 340 us | 1,057 us |
+| **16 concurrent callers**, thread hop + sync call | **4,950 us** | 6,748 us | 8,016 us |
+| **16 concurrent callers**, awaited asyncio call | **759 us** | 1,552 us | 2,904 us |
+
+Alone, the hop is 54 us and the Redis call 130 us: the cost is not either of them. With 16 callers the thread-hop version's median is 4.95 ms, which is the interpreter's thread switch interval (`sys.getswitchinterval()` = 5 ms): each hop makes the event loop and a worker thread take turns holding the interpreter lock, and under contention every handoff waits out a switch interval. The awaited call has no handoff and is 6.5 times faster at the median under the same concurrency. Redis itself was never the problem (the cache stage averaged less with the limiter on than off).
+
+*Fix:* the limiter's Redis call is a coroutine on a `redis.asyncio` client, awaited in the middleware on the event loop (the cache keeps the blocking client: it runs inside sync routes, already in worker threads). A test asserts the check runs on the event loop and not in a worker thread.
+
+*Result, same session, back to back* (limiter off, ON, off; then open model at the same 682 req/s):
+
+| | before the fix | after the fix |
+|---|---|---|
+| closed loop, limiter off: req/s (two runs) | 1,364 and 1,358 | 1,582 and 1,567 |
+| closed loop, limiter ON: req/s | 893 | **1,360** (a second run: 1,278) |
+| limiter ON as a share of off | 65.5% | **86.4%** |
+| service time added per request | +0.39 ms | **+0.10 ms** (+0.15 ms in the 1,278 run) |
+| closed loop, ON: p50 / p95 / p99 (ms) | 17.5 / 22.2 / 25.6 | **11.2 / 14.6 / 20.6** |
+| closed loop, off, same session: p50 / p95 / p99 (ms) | 11.1 / 15.2 / 19.6 | 9.6 / 12.5 / 17.2 |
+| open model at 682 req/s, ON: p50 / p95 / p99 (ms) | 1.28 / **218.7** / 233, **invalid: 216 dropped iterations** (68.7 p95 in the other pass) | **0.93 / 1.94 / 21.9, valid, 0 dropped** |
+| open model at 682 req/s, off: p50 / p95 / p99 (ms) | 0.85 / 2.21 / 18.6 | 0.75 / 1.28 / 13.5 (valid on the second attempt; the first dropped 24 iterations) |
+
+Read it within a column, not across: the limiter-off baseline itself moved from 1,364 to 1,582 req/s between the two sessions with no change on that path (the limiter is not constructed when it is off), so absolute numbers drifted by about 16% with the state of the machine. What the fix did is shrink the limiter's cost from 35% of throughput and a 219 ms tail to 14% and a tail within 0.7 ms of the limiter-off p95 at the same arrival rate. The remaining 0.10 ms is the awaited Redis round trip.
 
 **Where a prediction spends its time** (`api_predict_stage_seconds`, mean per request; these are the server's own timers)
 
@@ -225,7 +257,7 @@ What it shows: **throughput does not move with pool size** (212.5, 217.7, 210.3 
 | cold req/s; p50; p95 | about 200 (150 to 260); 75; 110 ms | 219; 71; 99 ms | inside |
 | warm, limiter off: req/s; p50; p95 | about 800 (500 to 1,200); 18; 30 ms | 1,364; 11.1; 15.2 ms | **outside, faster**: a hit is about 0.73 ms of process time, not 1.2 |
 | limiter's service-time cost | +0.3 to +0.7 ms | +0.39 ms | inside |
-| limiter's effect on req/s; p50; p95 | -15% (5 to 30%); +3; +5 ms | -34.5%; +6.4; +7.1 ms | **outside, worse** (the baseline was cheaper than I assumed, so the same 0.39 ms is a bigger share) |
+| limiter's effect on req/s; p50; p95 (BEFORE the fix) | -15% (5 to 30%); +3; +5 ms | -34.5%; +6.4; +7.1 ms | **outside, worse** (the baseline was cheaper than I assumed, so the same 0.39 ms is a bigger share) |
 | warm off, repeat | within 10% | within 0.5% | inside |
 | mixed req/s | about 430 (300 to 600) | 382 | inside |
 | rate_warm p50; p95; p99 | 3; 8; under 20 ms | 0.85; 2.21; 18.6 ms | better than predicted |
@@ -235,7 +267,7 @@ What it shows: **throughput does not move with pool size** (212.5, 217.7, 210.3 
 | pool 20 + 20 vs 10 + 10 | within 10% | -3.4% | inside (and peak "well under 40": it was 40, all of it, because 64 clients) |
 | cold/warm throughput ratio | 4 to 5 times | 6.2 times | **outside, higher** |
 
-**What I would do about it, in order of payoff** (none is in this PR): (1) make the limiter's Redis call without the thread hop (an `redis.asyncio` client), because 0.39 ms and a 69 to 219 ms p95 at three-quarters utilisation is a poor price for a cheap endpoint; (2) cut the per-request queries from four to two (names with rows, divisions with counts), since the database stage is 2.8 of 3.9 uncontended milliseconds and most of that is Python-side round-trip cost; (3) more processes or replicas, since one process is the limit (Phase 6; `uvicorn --workers` needs Prometheus multiprocess mode, which this API deliberately does not use).
+**What I would do about it, in order of payoff** (only the first is in this PR): (1) ~~make the limiter's Redis call without the thread hop~~ (done, above); (2) cut the per-request queries from four to two (names with rows, divisions with counts), since the database stage is 2.8 of 3.9 uncontended milliseconds and most of that is Python-side round-trip cost; (3) more processes or replicas, since one process is the limit (Phase 6; `uvicorn --workers` needs Prometheus multiprocess mode, which this API deliberately does not use).
 
 - Caveats: n = 1 per cell; one machine on which the load generator competes with the system under test; WSL2 and Docker Desktop networking; a synthetic upcoming card; 30 s windows; k6 `http_req_duration` includes the compose network hop. The first pass of the whole matrix (default OpenMP, kept in `data/bench/api/results_matrix1_omp_default.jsonl`) agrees with the second everywhere except where the table says OpenMP mattered. Raw per-run records are in `data/bench/api/results.jsonl` (gitignored).
 

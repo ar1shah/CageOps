@@ -67,6 +67,20 @@ def engine() -> Engine:
 TEST_REDIS_DB = 15  # dev data lives in db 0; tests only ever touch (and wipe) db 15
 
 
+def test_redis_url() -> str:
+    try:
+        base_url = os.environ.get("REDIS_URL") or get_settings().redis_url
+    except ValidationError:
+        base_url = "redis://localhost:6379/0"
+    return urlsplit(base_url)._replace(path=f"/{TEST_REDIS_DB}").geturl()
+
+
+@pytest.fixture
+def redis_test_url() -> str:
+    """The scratch database's URL, for code that builds its own client (the API's limiter)."""
+    return test_redis_url()
+
+
 @pytest.fixture
 def redis_client():
     """A Redis client on a scratch database that is emptied before every test.

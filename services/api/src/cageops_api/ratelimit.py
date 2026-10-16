@@ -37,8 +37,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from types import SimpleNamespace
 
-import anyio.to_thread
-import redis
+import redis.asyncio as aredis
 from starlette.responses import JSONResponse
 from starlette.types import ASGIApp, Receive, Scope, Send
 
@@ -214,9 +213,15 @@ def classify(
 
 
 class RateLimiter:
+    """The check is a coroutine on an asyncio Redis client: awaited on the event loop, with no
+    thread hop. (It used to run a blocking client in a worker thread. Measured alone, the hop is
+    only 54 us, but with 16 concurrent requests it queued behind the interpreter lock and cost a
+    median of 4.95 ms against 0.76 ms awaited; in the load test it cost 35% of throughput on a
+    cached request and a heavy tail. BENCHMARKS.md.)"""
+
     def __init__(
         self,
-        client: redis.Redis,
+        client: aredis.Redis,
         *,
         config: RateLimitConfig,
         metrics: ApiMetrics,
@@ -228,7 +233,9 @@ class RateLimiter:
         self._script = client.register_script(_LUA)
         self._client = client
 
-    def check(self, headers: Mapping[bytes, bytes], peer: str | None) -> tuple[Client, Decision]:
+    async def check(
+        self, headers: Mapping[bytes, bytes], peer: str | None
+    ) -> tuple[Client, Decision]:
         client = classify(headers, peer, self.config, self.metrics)
         if not self.guard.available():
             return client, Decision(True)
@@ -236,7 +243,7 @@ class RateLimiter:
         for bucket in client.buckets:
             args += [bucket.capacity, bucket.per_second / 1000]
         try:
-            allowed, retry_ms, refused = self._script(
+            allowed, retry_ms, refused = await self._script(
                 keys=[b.key for b in client.buckets], args=args
             )
         except FAIL_OPEN as exc:
@@ -287,7 +294,7 @@ class RateLimitMiddleware:
 
         headers = {k: v for k, v in scope.get("headers", [])}
         peer = scope["client"][0] if scope.get("client") else None
-        client, decision = await anyio.to_thread.run_sync(limiter.check, headers, peer)
+        client, decision = await limiter.check(headers, peer)
         scope["cageops_client"] = {"class": client.klass, "ip": client.ip}
 
         if decision.allowed:

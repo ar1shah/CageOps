@@ -346,7 +346,13 @@ def k6_trend(summary: dict, name: str) -> dict | None:
 # -- one run ------------------------------------------------------------------------------------
 
 
-def execute(run: Run, duration: str, rates: dict[str, float], k6_rps: dict[str, float]) -> dict:
+def execute(
+    run: Run,
+    duration: str,
+    rates: dict[str, float],
+    k6_rps: dict[str, float],
+    rate_override: int | None = None,
+) -> dict:
     flush_cache()
     base_env = {"VUS": str(run.vus), "DURATION": duration}
     if run.scenario in ("warm", "mixed") or (run.scenario == "rate" and run.set_ == "warm"):
@@ -358,7 +364,7 @@ def execute(run: Run, duration: str, rates: dict[str, float], k6_rps: dict[str, 
 
     env = {**base_env, "SCENARIO": run.scenario, "PHASE": "measure"}
     if run.scenario == "rate":
-        target = k6_rps[run.rate_of] * 0.5
+        target = rate_override if rate_override else k6_rps[run.rate_of] * 0.5
         env |= {"RATE": str(max(1, round(target))), "SET": run.set_, "MIX": "predict"}
         if run.set_ == "cold":
             flush_cache()
@@ -494,6 +500,11 @@ def main() -> int:
     parser.add_argument("--duration", default="30s")
     parser.add_argument("--fresh", action="store_true", help="truncate the results file first")
     parser.add_argument("--results", type=Path, default=RESULTS)
+    parser.add_argument(
+        "--rate", type=int, default=None,
+        help="arrival rate for open-model runs (default: half of the parent run's req/s); "
+        "use it to compare two configurations at the SAME rate",
+    )  # fmt: skip
     args = parser.parse_args()
     results = args.results
 
@@ -522,7 +533,7 @@ def main() -> int:
             start_api(run.config)
             current = run.config
         print(f"run {run.name}: {run.scenario} vus={run.vus} for {args.duration}", flush=True)
-        record = execute(run, args.duration, {}, k6_rps)
+        record = execute(run, args.duration, {}, k6_rps, args.rate)
         with results.open("a") as fh:
             fh.write(json.dumps(record) + "\n")
         flag = "valid" if record["valid"] else "INVALID: " + "; ".join(record["problems"])
